@@ -888,7 +888,7 @@ function CrosswordMenu({
   return (
     <div>
       {solved ? (
-        <p className="font-bold my-1">Crossword solved!</p>
+        <p className="font-bold my-1">Crossword solved</p>
       ) : (
         <p className="font-bold my-1">Not solved</p>
       )}
