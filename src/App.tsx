@@ -179,11 +179,12 @@ function wordLetterPosition(
 interface IntegerInputProps {
   min: number;
   max: number;
+  value: number;
   onValueChange: (value: number) => void;
 }
 
-function IntegerInput({ min, max, onValueChange }: IntegerInputProps) {
-  let [inputValue, setInputValue] = useState("");
+function IntegerInput({ min, max, value, onValueChange }: IntegerInputProps) {
+  let [inputValue, setInputValue] = useState(value.toString());
 
   return (
     <input
@@ -582,6 +583,7 @@ function EditCrossword() {
                     <IntegerInput
                       min={-10}
                       max={10}
+                      value={words[currentWordIndex as number].start[i]}
                       onValueChange={(value) => {
                         let currentWord = words[currentWordIndex as number];
                         let newStart = [
