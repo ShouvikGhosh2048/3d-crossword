@@ -1,7 +1,7 @@
 import { OrbitControls } from "@react-three/drei";
-import { Text } from "@react-three/drei/core";
+import { Text, TransformControls } from "@react-three/drei/core";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
-import { useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { FaArrowLeft, FaTrash } from "react-icons/fa";
 import { HashRouter, Routes, Route, Link } from "react-router-dom";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { z } from "zod";
 // https://stackoverflow.com/a/37193954
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a#using_the_download_attribute_to_save_a_canvas_as_a_png
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file#examples
+// https://stackoverflow.com/a/66590179
 
 function onlyContainsAlphabetsAndSpaces(s: string) {
   for (let i = 0; i < s.length; i++) {
@@ -184,7 +185,11 @@ interface IntegerInputProps {
 }
 
 function IntegerInput({ min, max, value, onValueChange }: IntegerInputProps) {
+  // We need a seperate inputValue as we want to allow '' and '-' in the input while typing.
   let [inputValue, setInputValue] = useState(value.toString());
+  if (value !== Number(inputValue)) {
+    setInputValue(value.toString());
+  }
 
   return (
     <input
@@ -205,6 +210,49 @@ function IntegerInput({ min, max, value, onValueChange }: IntegerInputProps) {
   );
 }
 
+interface WordPositionControlsProps {
+  orbitCenter: [number, number, number];
+  setWordCenter: (position: [number, number, number]) => void;
+  setOrbitCenter: (position: [number, number, number]) => void;
+}
+
+// When TransformControls is rerendered, the current dragging is stopped.
+// To prevent this we use memo.
+const WordPositionControls = memo(function ({
+  orbitCenter,
+  setWordCenter,
+  setOrbitCenter,
+}: WordPositionControlsProps) {
+  let transformControlsRef = useRef(null);
+  return (
+    <TransformControls
+      position={orbitCenter}
+      translationSnap={1}
+      ref={transformControlsRef}
+      onObjectChange={() => {
+        let transformControls = transformControlsRef.current as any;
+        setWordCenter([
+          transformControls.worldPosition.x,
+          transformControls.worldPosition.y,
+          transformControls.worldPosition.z,
+        ]);
+      }}
+      onMouseUp={() => {
+        let transformControls = transformControlsRef.current as any;
+        let newPosition = [
+          transformControls.worldPosition.x,
+          transformControls.worldPosition.y,
+          transformControls.worldPosition.z,
+        ] as [number, number, number];
+        setWordCenter(newPosition);
+        setOrbitCenter(newPosition);
+      }}
+    >
+      <mesh></mesh>
+    </TransformControls>
+  );
+});
+
 function EditCrossword() {
   let [name, setName] = useState("");
   let [words, setWords] = useState(
@@ -222,6 +270,23 @@ function EditCrossword() {
     number
   ]);
   let [newCrossword, setNewCrossword] = useState(true);
+  let setWordCenter = useCallback(
+    (position: [number, number, number]) => {
+      setWords(words => [
+        ...words.slice(0, currentWordIndex as number),
+        {
+          ...words[currentWordIndex as number],
+          start: wordLetterPosition(
+            position,
+            words[currentWordIndex as number].direction,
+            -Math.floor(words[currentWordIndex as number].word.length / 2)
+          ),
+        },
+        ...words.slice((currentWordIndex as number) + 1),
+      ]);
+    },
+    [currentWordIndex]
+  );
 
   let letters = new Map();
   words.forEach(({ word, direction, start }, wordIndex) => {
@@ -309,7 +374,7 @@ function EditCrossword() {
         textColor={letter === "?" ? "red" : "black"}
         opacity={opacity}
         key={positionKey}
-        color={isOrbitCenter ? "rgb(150, 150, 230)" : "rgb(200, 200, 200)"}
+        color={isOrbitCenter && currentWordIndex === null ? "rgb(150, 150, 230)" : "rgb(200, 200, 200)"}
         onClick={onClick}
       />
     );
@@ -620,14 +685,6 @@ function EditCrossword() {
                 className="border"
                 onChange={(e) => {
                   let word = e.target.value.toUpperCase();
-                  let { start, direction } = words[currentWordIndex as number];
-                  setOrbitCenter(
-                    wordLetterPosition(
-                      start,
-                      direction,
-                      Math.floor(word.length / 2)
-                    )
-                  );
                   if (
                     word.length <= 10 &&
                     onlyContainsAlphabetsAndSpaces(word)
@@ -640,6 +697,15 @@ function EditCrossword() {
                       },
                       ...words.slice((currentWordIndex as number) + 1),
                     ]);
+                    let { start, direction } =
+                      words[currentWordIndex as number];
+                    setOrbitCenter(
+                      wordLetterPosition(
+                        start,
+                        direction,
+                        Math.floor(word.length / 2)
+                      )
+                    );
                   }
                 }}
               />
@@ -670,7 +736,14 @@ function EditCrossword() {
             <ambientLight />
             <pointLight position={[10, 10, 10]} />
             {blocks}
-            <OrbitControls target={orbitCenter} />
+            {(currentWordIndex !== null && words[currentWordIndex].word.length > 0) && (
+              <WordPositionControls
+                orbitCenter={orbitCenter}
+                setWordCenter={setWordCenter}
+                setOrbitCenter = {setOrbitCenter}
+              />
+            )}
+            <OrbitControls target={orbitCenter} makeDefault />
           </Canvas>
         </div>
       </div>
