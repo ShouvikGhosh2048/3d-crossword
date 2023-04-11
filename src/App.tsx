@@ -1,7 +1,7 @@
 import { OrbitControls } from "@react-three/drei";
 import { Text, TransformControls } from "@react-three/drei/core";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { FaArrowLeft, FaTrash } from "react-icons/fa";
 import { HashRouter, Routes, Route, Link } from "react-router-dom";
 import { z } from "zod";
@@ -272,7 +272,7 @@ function EditCrossword() {
   let [newCrossword, setNewCrossword] = useState(true);
   let setWordCenter = useCallback(
     (position: [number, number, number]) => {
-      setWords(words => [
+      setWords((words) => [
         ...words.slice(0, currentWordIndex as number),
         {
           ...words[currentWordIndex as number],
@@ -374,7 +374,11 @@ function EditCrossword() {
         textColor={letter === "?" ? "red" : "black"}
         opacity={opacity}
         key={positionKey}
-        color={isOrbitCenter && currentWordIndex === null ? "rgb(150, 150, 230)" : "rgb(200, 200, 200)"}
+        color={
+          isOrbitCenter && currentWordIndex === null
+            ? "rgb(150, 150, 230)"
+            : "rgb(200, 200, 200)"
+        }
         onClick={onClick}
       />
     );
@@ -736,13 +740,14 @@ function EditCrossword() {
             <ambientLight />
             <pointLight position={[10, 10, 10]} />
             {blocks}
-            {(currentWordIndex !== null && words[currentWordIndex].word.length > 0) && (
-              <WordPositionControls
-                orbitCenter={orbitCenter}
-                setWordCenter={setWordCenter}
-                setOrbitCenter = {setOrbitCenter}
-              />
-            )}
+            {currentWordIndex !== null &&
+              words[currentWordIndex].word.length > 0 && (
+                <WordPositionControls
+                  orbitCenter={orbitCenter}
+                  setWordCenter={setWordCenter}
+                  setOrbitCenter={setOrbitCenter}
+                />
+              )}
             <OrbitControls target={orbitCenter} makeDefault />
           </Canvas>
         </div>
@@ -881,6 +886,7 @@ interface CrosswordMenuProps {
   setWords: (words: string[]) => void;
   currentWordIndex: null | number;
   setCurrentWordIndex: (wordIndex: null | number) => void;
+  orbitCenter: [number, number, number];
   setOrbitCenter: (orbitCenter: [number, number, number]) => void;
 }
 
@@ -890,6 +896,7 @@ function CrosswordMenu({
   setWords,
   currentWordIndex,
   setCurrentWordIndex,
+  orbitCenter,
   setOrbitCenter,
 }: CrosswordMenuProps) {
   let letters = new Map();
@@ -960,6 +967,26 @@ function CrosswordMenu({
     }
   }
 
+  let containsOrbitCenter = crossword.words.map((word) => {
+    let endBlock = wordLetterPosition(
+      word.start,
+      word.direction,
+      word.word.length - 1
+    );
+    for (let i = 0; i < 3; i++) {
+      // Check that the orbit center coordinates lie between word.start and endBlock in every dimension.
+      if (
+        !(
+          (word.start[i] <= orbitCenter[i] && orbitCenter[i] <= endBlock[i]) ||
+          (word.start[i] >= orbitCenter[i] && orbitCenter[i] >= endBlock[i])
+        )
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   return (
     <div>
       {solved ? (
@@ -984,9 +1011,16 @@ function CrosswordMenu({
                     )
                   );
                 }}
-                className={wordValidity[index] ? "" : "text-red-700"}
+                className={
+                  (wordValidity[index] ? "" : "text-red-700 ") +
+                  (containsOrbitCenter[index] ? "p-1 rounded bg-sky-100" : "")
+                }
               >
-                {word.length > 0 ? word.replaceAll(" ", "_") : "_"}
+                {word.replaceAll(" ", "_") +
+                  "_".repeat(crossword.words[index].word.length - word.length) +
+                  " (" +
+                  crossword.words[index].word.length +
+                  ")"}
               </button>
             </div>
           ))}
@@ -1074,6 +1108,7 @@ function PlayCrossword() {
             setWords={setWords}
             currentWordIndex={currentWordIndex}
             setCurrentWordIndex={setCurrentWordIndex}
+            orbitCenter={orbitCenter}
             setOrbitCenter={setOrbitCenter}
           />
         )}
