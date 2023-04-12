@@ -523,18 +523,20 @@ function EditCrossword() {
                         }
 
                         let { start, direction, word } = words[i];
-                        let end = wordLetterPosition(
+                        let endBlock = wordLetterPosition(
                           start,
                           direction,
-                          word.length
+                          word.length - 1
                         );
 
                         orbitCenterStillExists = true;
                         for (let i = 0; i < 3; i++) {
                           if (
                             !(
-                              start[i] <= orbitCenter[i] &&
-                              orbitCenter[i] < end[i]
+                              (start[i] <= orbitCenter[i] &&
+                                orbitCenter[i] <= endBlock[i]) ||
+                              (start[i] >= orbitCenter[i] &&
+                                orbitCenter[i] >= endBlock[i])
                             )
                           ) {
                             orbitCenterStillExists = false;
