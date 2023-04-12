@@ -111,9 +111,9 @@ const crosswordSchema = z.object({
   name: z.string().min(1),
   words: z
     .object({
-      word: z.string().min(1).max(10),
+      word: z.string().min(1),
       direction: z.enum(["X", "Y", "Z"]),
-      start: z.number().min(-10).max(10).array().length(3),
+      start: z.number().int().array().length(3),
       description: z.string().min(1),
     })
     .array(),
@@ -142,6 +142,33 @@ function OpenCrossword({ onOpen }: OpenCrosswordProps) {
                   let crossword = crosswordSchema.parse(
                     JSON.parse(text)
                   ) as Crossword;
+
+                  // Check whether the crossword is valid.
+                  let letters = new Map();
+                  for (const { word, direction, start } of crossword.words) {
+                    for (let i = 0; i < word.length; i++) {
+                      if (
+                        word[i].charCodeAt(i) < "A".charCodeAt(0) ||
+                        word[i].charCodeAt(i) > "Z".charCodeAt(0)
+                      ) {
+                        // Not an uppercase alphabet.
+                        setFileError("Invalid crossword");
+                        return;
+                      }
+
+                      let position = wordLetterPosition(start, direction, i);
+                      let positionKey = `${position[0]} ${position[1]} ${position[2]}`;
+
+                      let entry = letters.get(positionKey);
+                      if (entry === undefined) {
+                        letters.set(positionKey, word[i]);
+                      } else if (entry !== word[i]) {
+                        setFileError("Invalid crossword");
+                        return;
+                      }
+                    }
+                  }
+
                   setFileError("");
                   onOpen(crossword);
                 } catch (err) {
@@ -178,13 +205,11 @@ function wordLetterPosition(
 }
 
 interface IntegerInputProps {
-  min: number;
-  max: number;
   value: number;
   onValueChange: (value: number) => void;
 }
 
-function IntegerInput({ min, max, value, onValueChange }: IntegerInputProps) {
+function IntegerInput({ value, onValueChange }: IntegerInputProps) {
   // We need a seperate inputValue as we want to allow '' and '-' in the input while typing.
   let [inputValue, setInputValue] = useState(value.toString());
   if (value !== Number(inputValue)) {
@@ -198,13 +223,11 @@ function IntegerInput({ min, max, value, onValueChange }: IntegerInputProps) {
       value={inputValue}
       onChange={(e) => {
         let number = Number(e.target.value);
-        if (Math.floor(number) === number && number >= min && number <= max) {
+        if (Math.floor(number) === number) {
           setInputValue(e.target.value);
           onValueChange(number);
         }
       }}
-      min={min}
-      max={max}
       step="1"
     />
   );
@@ -424,7 +447,7 @@ function EditCrossword() {
 
   return (
     <div className="flex justify-between h-screen">
-      <div className="border-r p-3 w-min space-y-3">
+      <div className="border-r p-3 space-y-3 w-60">
         <div className="border-b pb-3">
           <Link to="/" className="underline">
             Play crosswords
@@ -500,7 +523,10 @@ function EditCrossword() {
               {words.map((word, index) => (
                 <div className="flex justify-between" key={index}>
                   <button
-                    className={wordValidity[index] ? "" : "text-red-700"}
+                    className={
+                      "mr-3 text-ellipsis overflow-hidden " +
+                      (wordValidity[index] ? "" : "text-red-700")
+                    }
                     onClick={() => {
                       setCurrentWordIndex(index);
                       let { start, direction, word } = words[index];
@@ -652,8 +678,6 @@ function EditCrossword() {
                   <div className="flex gap-2" key={i}>
                     <label>{dimension}:</label>
                     <IntegerInput
-                      min={-10}
-                      max={10}
                       value={words[currentWordIndex as number].start[i]}
                       onValueChange={(value) => {
                         let currentWord = words[currentWordIndex as number];
@@ -691,10 +715,7 @@ function EditCrossword() {
                 className="border"
                 onChange={(e) => {
                   let word = e.target.value.toUpperCase();
-                  if (
-                    word.length <= 10 &&
-                    onlyContainsAlphabetsAndSpaces(word)
-                  ) {
+                  if (onlyContainsAlphabetsAndSpaces(word)) {
                     setWords([
                       ...words.slice(0, currentWordIndex as number),
                       {
@@ -1001,7 +1022,7 @@ function CrosswordMenu({
           <p className="my-1">Words:</p>
           {words.map((word, index) => (
             <div className="my-1" key={index}>
-              <button
+              <span
                 onClick={() => {
                   setCurrentWordIndex(index);
                   let { start, direction, word } = crossword.words[index];
@@ -1014,16 +1035,19 @@ function CrosswordMenu({
                   );
                 }}
                 className={
+                  "flex justify-between " +
                   (wordValidity[index] ? "" : "text-red-700 ") +
                   (containsOrbitCenter[index] ? "p-1 rounded bg-sky-100" : "")
                 }
               >
-                {word.replaceAll(" ", "_") +
-                  "_".repeat(crossword.words[index].word.length - word.length) +
-                  " (" +
-                  crossword.words[index].word.length +
-                  ")"}
-              </button>
+                <span className="text-ellipsis overflow-hidden">
+                  {word.replaceAll(" ", "_") +
+                    "_".repeat(
+                      crossword.words[index].word.length - word.length
+                    )}
+                </span>
+                <span>{"(" + crossword.words[index].word.length + ")"}</span>
+              </span>
             </div>
           ))}
         </div>
@@ -1087,7 +1111,7 @@ function PlayCrossword() {
 
   return (
     <div className="h-screen flex justify-between">
-      <div className="border-r w-min p-3 space-y-3">
+      <div className="border-r p-3 space-y-3 w-60">
         <div className="border-b pb-3">
           <Link to="/edit" className="underline">
             Edit crosswords
