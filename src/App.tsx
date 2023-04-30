@@ -11,7 +11,10 @@ import { z } from "zod";
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file#examples
 // https://stackoverflow.com/a/66590179
 
-function onlyContainsAlphabetsAndSpaces(s: string) {
+const BLOCK_COLOR = "rgb(200, 200, 200)";
+const SELECTED_BLOCK_COLOR = "rgb(150, 150, 230)";
+
+function onlyContainsUpperCaseAlphabetsAndSpaces(s: string) {
   for (let i = 0; i < s.length; i++) {
     if (
       ("A".charCodeAt(0) > s.charCodeAt(i) ||
@@ -22,6 +25,24 @@ function onlyContainsAlphabetsAndSpaces(s: string) {
     }
   }
   return true;
+}
+
+function wordLetterPosition(
+  start: [number, number, number],
+  direction: "X" | "Y" | "Z",
+  index: number
+): [number, number, number] {
+  switch (direction) {
+    case "X": {
+      return [start[0] + index, start[1], start[2]];
+    }
+    case "Y": {
+      return [start[0], start[1] - index, start[2]];
+    }
+    case "Z": {
+      return [start[0], start[1], start[2] + index];
+    }
+  }
 }
 
 interface LetterBlockProps {
@@ -41,7 +62,9 @@ function LetterBlock({
   opacity,
   onClick,
 }: LetterBlockProps) {
-  let positionsAndRotations: [
+  // The 0.51 is used so that the letter lies slightly outside the cube and thus is visible.
+  // The 0.05 is used to center the letters.
+  let letterPositionsAndRotations: [
     [number, number, number],
     [number, number, number]
   ][] = [
@@ -73,7 +96,7 @@ function LetterBlock({
 
   return (
     <>
-      {positionsAndRotations.map(([position, rotation], index) => (
+      {letterPositionsAndRotations.map(([position, rotation], index) => (
         <Text
           position={position}
           rotation={rotation}
@@ -97,14 +120,16 @@ function LetterBlock({
   );
 }
 
+type Word = {
+  word: string;
+  direction: "X" | "Y" | "Z";
+  start: [number, number, number];
+  description: string;
+};
+
 type Crossword = {
   name: string;
-  words: {
-    word: string;
-    direction: "X" | "Y" | "Z";
-    start: [number, number, number];
-    description: string;
-  }[];
+  words: Word[];
 };
 
 const crosswordSchema = z.object({
@@ -186,24 +211,6 @@ function OpenCrossword({ onOpen }: OpenCrosswordProps) {
   );
 }
 
-function wordLetterPosition(
-  start: [number, number, number],
-  direction: "X" | "Y" | "Z",
-  index: number
-): [number, number, number] {
-  switch (direction) {
-    case "X": {
-      return [start[0] + index, start[1], start[2]];
-    }
-    case "Y": {
-      return [start[0], start[1] - index, start[2]];
-    }
-    case "Z": {
-      return [start[0], start[1], start[2] + index];
-    }
-  }
-}
-
 interface IntegerInputProps {
   value: number;
   onValueChange: (value: number) => void;
@@ -276,23 +283,393 @@ const WordPositionControls = memo(function ({
   );
 });
 
+interface EditCrosswordMenuProps {
+  name: string;
+  setName: (name: string) => void;
+  words: Word[];
+  setWords: (words: Word[]) => void;
+  orbitCenter: [number, number, number];
+  setOrbitCenter: (orbitCenter: [number, number, number]) => void;
+  currentWordIndex: null | number;
+  setCurrentWordIndex: (currentWordIndex: null | number) => void;
+  letters: Map<
+    string,
+    {
+      letter: string;
+      position: [number, number, number];
+      opacity: number;
+      lettersBy: number[];
+    }
+  >;
+}
+
+function EditCrosswordMenu({
+  name,
+  setName,
+  words,
+  setWords,
+  orbitCenter,
+  setOrbitCenter,
+  currentWordIndex,
+  setCurrentWordIndex,
+  letters,
+}: EditCrosswordMenuProps) {
+  let [showOpenCrossword, setShowOpenCrossword] = useState(false);
+
+  let wordValidity: boolean[] = new Array(words.length).fill(true);
+  for (let i = 0; i < words.length; i++) {
+    if (words[i].description.length === 0) {
+      wordValidity[i] = false;
+      continue;
+    }
+
+    if (words[i].word.length === 0) {
+      wordValidity[i] = false;
+      continue;
+    }
+
+    for (let j = 0; j < words[i].word.length; j++) {
+      if (words[i].word[j] === " ") {
+        wordValidity[i] = false;
+        break;
+      }
+    }
+  }
+  for (const { letter, lettersBy } of letters.values()) {
+    if (letter === "?") {
+      lettersBy.forEach((i: number) => {
+        wordValidity[i] = false;
+      });
+    }
+  }
+
+  let allowSave = true;
+  for (let i = 0; i < words.length; i++) {
+    if (!wordValidity[i]) {
+      allowSave = false;
+      break;
+    }
+  }
+  if (name.length === 0 || words.length === 0) {
+    allowSave = false;
+  }
+
+  return (
+    <div className="border-r p-3 space-y-3 w-60">
+      <div className="border-b pb-3">
+        <Link to="/" className="underline">
+          Play crosswords
+        </Link>
+      </div>
+      <div className="border-b pb-3">
+        {!showOpenCrossword && (
+          <button
+            onClick={() => {
+              setShowOpenCrossword(true);
+            }}
+            className="underline"
+          >
+            Edit crossword
+          </button>
+        )}
+        {showOpenCrossword && (
+          <>
+            <button
+              onClick={() => {
+                setShowOpenCrossword(false);
+                setWords([]);
+                setName("");
+                setOrbitCenter([0, 0, 0]);
+                setCurrentWordIndex(null);
+              }}
+              className="underline mb-3"
+            >
+              New crossword
+            </button>
+            <p className="mb-1">Open file to edit: </p>
+            <OpenCrossword
+              onOpen={({ name, words }) => {
+                setWords(words);
+                setName(name);
+                setOrbitCenter([0, 0, 0]);
+                setCurrentWordIndex(null);
+              }}
+            />
+          </>
+        )}
+      </div>
+      <input
+        value={name}
+        onChange={(e) => {
+          setName(e.target.value);
+        }}
+        placeholder="Name"
+        className="border mb-3 p-0.5"
+      />
+      {currentWordIndex === null && (
+        <>
+          <div className="flex justify-between mb-3">
+            <span>Words:</span>
+            <button
+              onClick={() => {
+                setWords([
+                  ...words,
+                  {
+                    word: "",
+                    direction: "X",
+                    start: orbitCenter,
+                    description: "",
+                  },
+                ]);
+                setCurrentWordIndex(words.length);
+              }}
+            >
+              + New word
+            </button>
+          </div>
+          <div className="space-y-1">
+            {words.map((word, index) => (
+              <div className="flex justify-between" key={index}>
+                <button
+                  className={
+                    "mr-3 text-ellipsis overflow-hidden " +
+                    (wordValidity[index] ? "" : "text-red-700")
+                  }
+                  onClick={() => {
+                    setCurrentWordIndex(index);
+                    let { start, direction, word } = words[index];
+                    let blockIndex = Math.floor(word.length / 2);
+                    setOrbitCenter(
+                      wordLetterPosition(start, direction, blockIndex)
+                    );
+                  }}
+                >
+                  {word.word.length > 0 ? word.word.replaceAll(" ", "_") : "_"}
+                </button>
+                <button
+                  onClick={() => {
+                    // Check if the orbit center still has a letter block after deleting the word,
+                    // if not reset the orbit center to [0, 0, 0].
+                    let orbitCenterHasBlock = false;
+                    for (let i = 0; i < words.length; i++) {
+                      if (i === index) {
+                        continue;
+                      }
+
+                      let { start, direction, word } = words[i];
+                      let endBlock = wordLetterPosition(
+                        start,
+                        direction,
+                        word.length - 1
+                      );
+
+                      orbitCenterHasBlock = true;
+                      for (let i = 0; i < 3; i++) {
+                        if (
+                          !(
+                            (start[i] <= orbitCenter[i] &&
+                              orbitCenter[i] <= endBlock[i]) ||
+                            (start[i] >= orbitCenter[i] &&
+                              orbitCenter[i] >= endBlock[i])
+                          )
+                        ) {
+                          orbitCenterHasBlock = false;
+                        }
+                      }
+
+                      if (orbitCenterHasBlock) {
+                        break;
+                      }
+                    }
+
+                    if (!orbitCenterHasBlock) {
+                      setOrbitCenter([0, 0, 0]);
+                    }
+                    setWords([
+                      ...words.slice(0, index),
+                      ...words.slice(index + 1),
+                    ]);
+                  }}
+                >
+                  <FaTrash />
+                </button>
+              </div>
+            ))}
+          </div>
+          {allowSave && (
+            <div className="flex justify-center">
+              <a
+                onClick={(e) => {
+                  const file = new File(
+                    [
+                      JSON.stringify({
+                        name,
+                        words,
+                      }),
+                    ],
+                    `${name}.json`,
+                    {
+                      type: "application/json",
+                    }
+                  );
+                  let link = e.target as HTMLAnchorElement;
+                  link.href = URL.createObjectURL(file);
+                }}
+                download={`${name}.json`}
+              >
+                Save crossword
+              </a>
+            </div>
+          )}
+        </>
+      )}
+      {currentWordIndex !== null && (
+        <>
+          <div className="my-3 flex items-center gap-1">
+            <button
+              onClick={() => {
+                setCurrentWordIndex(null);
+              }}
+            >
+              <FaArrowLeft />
+            </button>
+          </div>
+          <div>
+            <p>Direction:</p>
+            <div className="flex gap-3 mb-3">
+              {["X", "Y", "Z"].map((direction) => (
+                <span key={direction}>
+                  <input
+                    type="radio"
+                    name="direction"
+                    id={direction}
+                    value={direction}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        let word = words[currentWordIndex as number];
+                        setOrbitCenter(
+                          wordLetterPosition(
+                            word.start,
+                            direction as "X" | "Y" | "Z",
+                            Math.floor(word.word.length / 2)
+                          )
+                        );
+                        setWords([
+                          ...words.slice(0, currentWordIndex as number),
+                          {
+                            ...word,
+                            direction: direction as "X" | "Y" | "Z",
+                          },
+                          ...words.slice((currentWordIndex as number) + 1),
+                        ]);
+                      }
+                    }}
+                    checked={
+                      direction === words[currentWordIndex as number].direction
+                    }
+                  />
+                  <label htmlFor={direction}>{direction}</label>
+                </span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p>Start:</p>
+            <div className="flex gap-3 mb-3">
+              {["X", "Y", "Z"].map((dimension, i) => (
+                <div className="flex gap-2" key={i}>
+                  <label>{dimension}:</label>
+                  <IntegerInput
+                    value={words[currentWordIndex as number].start[i]}
+                    onValueChange={(value) => {
+                      let currentWord = words[currentWordIndex as number];
+                      let newStart = [
+                        ...currentWord.start.slice(0, i),
+                        value,
+                        ...currentWord.start.slice(i + 1),
+                      ] as [number, number, number];
+                      let { direction, word } = currentWord;
+                      setOrbitCenter(
+                        wordLetterPosition(
+                          newStart,
+                          direction,
+                          Math.floor(word.length / 2)
+                        )
+                      );
+                      setWords([
+                        ...words.slice(0, currentWordIndex as number),
+                        {
+                          ...currentWord,
+                          start: newStart,
+                        },
+                        ...words.slice((currentWordIndex as number) + 1),
+                      ]);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p>Word:</p>
+            <input
+              value={words[currentWordIndex as number].word}
+              className="border"
+              onChange={(e) => {
+                let word = e.target.value.toUpperCase();
+                if (onlyContainsUpperCaseAlphabetsAndSpaces(word)) {
+                  setWords([
+                    ...words.slice(0, currentWordIndex as number),
+                    {
+                      ...words[currentWordIndex as number],
+                      word,
+                    },
+                    ...words.slice((currentWordIndex as number) + 1),
+                  ]);
+                  let { start, direction } = words[currentWordIndex as number];
+                  setOrbitCenter(
+                    wordLetterPosition(
+                      start,
+                      direction,
+                      Math.floor(word.length / 2)
+                    )
+                  );
+                }
+              }}
+            />
+          </div>
+          <div>
+            <p>Description:</p>
+            <textarea
+              value={words[currentWordIndex as number].description}
+              onChange={(e) => {
+                setWords([
+                  ...words.slice(0, currentWordIndex as number),
+                  {
+                    ...words[currentWordIndex as number],
+                    description: e.target.value,
+                  },
+                  ...words.slice((currentWordIndex as number) + 1),
+                ]);
+              }}
+              className="border"
+            ></textarea>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function EditCrossword() {
   let [name, setName] = useState("");
-  let [words, setWords] = useState(
-    [] as {
-      word: string;
-      direction: "X" | "Y" | "Z";
-      start: [number, number, number];
-      description: string;
-    }[]
-  );
+  let [words, setWords] = useState([] as Word[]);
   let [currentWordIndex, setCurrentWordIndex] = useState(null as null | number);
   let [orbitCenter, setOrbitCenter] = useState([0, 0, 0] as [
     number,
     number,
     number
   ]);
-  let [newCrossword, setNewCrossword] = useState(true);
   let setWordCenter = useCallback(
     (position: [number, number, number]) => {
       setWords((words) => [
@@ -311,7 +688,15 @@ function EditCrossword() {
     [currentWordIndex]
   );
 
-  let letters = new Map();
+  let letters: Map<
+    string,
+    {
+      letter: string;
+      position: [number, number, number];
+      opacity: number;
+      lettersBy: number[];
+    }
+  > = new Map();
   words.forEach(({ word, direction, start }, wordIndex) => {
     for (let i = 0; i < word.length; i++) {
       let position = wordLetterPosition(start, direction, i);
@@ -356,6 +741,7 @@ function EditCrossword() {
           lettersBy: [...entry.lettersBy, wordIndex],
         });
       } else {
+        // The letters don't match.
         letters.set(positionKey, {
           letter: "?",
           position,
@@ -399,364 +785,27 @@ function EditCrossword() {
         key={positionKey}
         color={
           isOrbitCenter && currentWordIndex === null
-            ? "rgb(150, 150, 230)"
-            : "rgb(200, 200, 200)"
+            ? SELECTED_BLOCK_COLOR
+            : BLOCK_COLOR
         }
         onClick={onClick}
       />
     );
   }
 
-  let wordValidity: boolean[] = new Array(words.length).fill(true);
-  for (let i = 0; i < words.length; i++) {
-    if (words[i].description.length === 0) {
-      wordValidity[i] = false;
-      continue;
-    }
-
-    if (words[i].word.length === 0) {
-      wordValidity[i] = false;
-      continue;
-    }
-
-    for (let j = 0; j < words[i].word.length; j++) {
-      if (words[i].word[j] === " ") {
-        wordValidity[i] = false;
-        break;
-      }
-    }
-  }
-  for (const { letter, lettersBy } of letters.values()) {
-    if (letter === "?") {
-      lettersBy.forEach((i: number) => {
-        wordValidity[i] = false;
-      });
-    }
-  }
-
-  let allowSave = true;
-  for (let i = 0; i < words.length; i++) {
-    if (!wordValidity[i]) {
-      allowSave = false;
-      break;
-    }
-  }
-  if (name.length === 0 || words.length === 0) {
-    allowSave = false;
-  }
-
   return (
     <div className="flex justify-between h-screen">
-      <div className="border-r p-3 space-y-3 w-60">
-        <div className="border-b pb-3">
-          <Link to="/" className="underline">
-            Play crosswords
-          </Link>
-        </div>
-        <div className="border-b pb-3">
-          {newCrossword && (
-            <button
-              onClick={() => {
-                setNewCrossword(false);
-              }}
-              className="underline"
-            >
-              Edit crossword
-            </button>
-          )}
-          {!newCrossword && (
-            <>
-              <button
-                onClick={() => {
-                  setNewCrossword(true);
-                  setWords([]);
-                  setName("");
-                  setOrbitCenter([0, 0, 0]);
-                  setCurrentWordIndex(null);
-                }}
-                className="underline mb-3"
-              >
-                New crossword
-              </button>
-              <p className="mb-1">Open file to edit: </p>
-              <OpenCrossword
-                onOpen={({ name, words }) => {
-                  setWords(words);
-                  setName(name);
-                  setOrbitCenter([0, 0, 0]);
-                  setCurrentWordIndex(null);
-                }}
-              />
-            </>
-          )}
-        </div>
-        <input
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-          }}
-          placeholder="Name"
-          className="border mb-3 p-0.5"
-        />
-        {currentWordIndex === null && (
-          <>
-            <div className="flex justify-between mb-3">
-              <span>Words:</span>
-              <button
-                onClick={() => {
-                  setWords([
-                    ...words,
-                    {
-                      word: "",
-                      direction: "X",
-                      start: orbitCenter,
-                      description: "",
-                    },
-                  ]);
-                  setCurrentWordIndex(words.length);
-                }}
-              >
-                + New word
-              </button>
-            </div>
-            <div className="space-y-1">
-              {words.map((word, index) => (
-                <div className="flex justify-between" key={index}>
-                  <button
-                    className={
-                      "mr-3 text-ellipsis overflow-hidden " +
-                      (wordValidity[index] ? "" : "text-red-700")
-                    }
-                    onClick={() => {
-                      setCurrentWordIndex(index);
-                      let { start, direction, word } = words[index];
-                      let blockIndex = Math.floor(word.length / 2);
-                      setOrbitCenter(
-                        wordLetterPosition(start, direction, blockIndex)
-                      );
-                    }}
-                  >
-                    {word.word.length > 0
-                      ? word.word.replaceAll(" ", "_")
-                      : "_"}
-                  </button>
-                  <button
-                    onClick={() => {
-                      let orbitCenterStillExists = false;
-                      for (let i = 0; i < words.length; i++) {
-                        if (i === index) {
-                          continue;
-                        }
-
-                        let { start, direction, word } = words[i];
-                        let endBlock = wordLetterPosition(
-                          start,
-                          direction,
-                          word.length - 1
-                        );
-
-                        orbitCenterStillExists = true;
-                        for (let i = 0; i < 3; i++) {
-                          if (
-                            !(
-                              (start[i] <= orbitCenter[i] &&
-                                orbitCenter[i] <= endBlock[i]) ||
-                              (start[i] >= orbitCenter[i] &&
-                                orbitCenter[i] >= endBlock[i])
-                            )
-                          ) {
-                            orbitCenterStillExists = false;
-                          }
-                        }
-
-                        if (orbitCenterStillExists) {
-                          break;
-                        }
-                      }
-
-                      if (!orbitCenterStillExists) {
-                        setOrbitCenter([0, 0, 0]);
-                      }
-                      setWords([
-                        ...words.slice(0, index),
-                        ...words.slice(index + 1),
-                      ]);
-                    }}
-                  >
-                    <FaTrash />
-                  </button>
-                </div>
-              ))}
-            </div>
-            {allowSave && (
-              <div className="flex justify-center">
-                <a
-                  onClick={(e) => {
-                    const file = new File(
-                      [
-                        JSON.stringify({
-                          name,
-                          words,
-                        }),
-                      ],
-                      `${name}.json`,
-                      {
-                        type: "application/json",
-                      }
-                    );
-                    let link = e.target as HTMLAnchorElement;
-                    link.href = URL.createObjectURL(file);
-                  }}
-                  download={`${name}.json`}
-                >
-                  Save crossword
-                </a>
-              </div>
-            )}
-          </>
-        )}
-        {currentWordIndex !== null && (
-          <>
-            <div className="my-3 flex items-center gap-1">
-              <FaArrowLeft
-                onClick={() => {
-                  setCurrentWordIndex(null);
-                }}
-              />
-              <button
-                onClick={() => {
-                  setCurrentWordIndex(null);
-                }}
-              >
-                Back
-              </button>
-            </div>
-            <div>
-              <p>Direction:</p>
-              <div className="flex gap-3 mb-3">
-                {["X", "Y", "Z"].map((direction) => (
-                  <span key={direction}>
-                    <input
-                      type="radio"
-                      name="direction"
-                      id={direction}
-                      value={direction}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          let word = words[currentWordIndex as number];
-                          setOrbitCenter(
-                            wordLetterPosition(
-                              word.start,
-                              direction as "X" | "Y" | "Z",
-                              Math.floor(word.word.length / 2)
-                            )
-                          );
-                          setWords([
-                            ...words.slice(0, currentWordIndex as number),
-                            {
-                              ...word,
-                              direction: direction as "X" | "Y" | "Z",
-                            },
-                            ...words.slice((currentWordIndex as number) + 1),
-                          ]);
-                        }
-                      }}
-                      checked={
-                        direction ===
-                        words[currentWordIndex as number].direction
-                      }
-                    />
-                    <label htmlFor={direction}>{direction}</label>
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p>Start:</p>
-              <div className="flex gap-3 mb-3">
-                {["X", "Y", "Z"].map((dimension, i) => (
-                  <div className="flex gap-2" key={i}>
-                    <label>{dimension}:</label>
-                    <IntegerInput
-                      value={words[currentWordIndex as number].start[i]}
-                      onValueChange={(value) => {
-                        let currentWord = words[currentWordIndex as number];
-                        let newStart = [
-                          ...currentWord.start.slice(0, i),
-                          value,
-                          ...currentWord.start.slice(i + 1),
-                        ] as [number, number, number];
-                        let { direction, word } = currentWord;
-                        setOrbitCenter(
-                          wordLetterPosition(
-                            newStart,
-                            direction,
-                            Math.floor(word.length / 2)
-                          )
-                        );
-                        setWords([
-                          ...words.slice(0, currentWordIndex as number),
-                          {
-                            ...currentWord,
-                            start: newStart,
-                          },
-                          ...words.slice((currentWordIndex as number) + 1),
-                        ]);
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p>Word:</p>
-              <input
-                value={words[currentWordIndex as number].word}
-                className="border"
-                onChange={(e) => {
-                  let word = e.target.value.toUpperCase();
-                  if (onlyContainsAlphabetsAndSpaces(word)) {
-                    setWords([
-                      ...words.slice(0, currentWordIndex as number),
-                      {
-                        ...words[currentWordIndex as number],
-                        word,
-                      },
-                      ...words.slice((currentWordIndex as number) + 1),
-                    ]);
-                    let { start, direction } =
-                      words[currentWordIndex as number];
-                    setOrbitCenter(
-                      wordLetterPosition(
-                        start,
-                        direction,
-                        Math.floor(word.length / 2)
-                      )
-                    );
-                  }
-                }}
-              />
-            </div>
-            <div>
-              <p>Description:</p>
-              <textarea
-                value={words[currentWordIndex as number].description}
-                onChange={(e) => {
-                  setWords([
-                    ...words.slice(0, currentWordIndex as number),
-                    {
-                      ...words[currentWordIndex as number],
-                      description: e.target.value,
-                    },
-                    ...words.slice((currentWordIndex as number) + 1),
-                  ]);
-                }}
-                className="border"
-              ></textarea>
-            </div>
-          </>
-        )}
-      </div>
+      <EditCrosswordMenu
+        name={name}
+        setName={setName}
+        words={words}
+        setWords={setWords}
+        orbitCenter={orbitCenter}
+        setOrbitCenter={setOrbitCenter}
+        currentWordIndex={currentWordIndex}
+        setCurrentWordIndex={setCurrentWordIndex}
+        letters={letters}
+      />
       <div className="grow flex justify-center items-center bg-gray-100">
         <div className="h-5/6 w-11/12 bg-white">
           <Canvas>
@@ -886,7 +935,7 @@ function ViewCrossword({
         letter={letter}
         textColor={letter === "?" ? "red" : "black"}
         opacity={opacity}
-        color={isOrbitCenter ? "rgb(150, 150, 230)" : "rgb(200, 200, 200)"}
+        color={isOrbitCenter ? SELECTED_BLOCK_COLOR : BLOCK_COLOR}
         onClick={onClick}
         key={positionKey}
       />
@@ -1012,11 +1061,9 @@ function CrosswordMenu({
 
   return (
     <div>
-      {solved ? (
-        <p className="font-bold my-1">Crossword solved</p>
-      ) : (
-        <p className="font-bold my-1">Not solved</p>
-      )}
+      <p className="font-bold pb-2 border-b">
+        {solved ? "Crossword solved" : "Not solved"}
+      </p>
       {currentWordIndex === null && (
         <div>
           <p className="my-1">Words:</p>
@@ -1055,17 +1102,12 @@ function CrosswordMenu({
       {currentWordIndex !== null && (
         <>
           <div className="my-1 flex items-center gap-1">
-            <FaArrowLeft
-              onClick={() => {
-                setCurrentWordIndex(null);
-              }}
-            />
             <button
               onClick={() => {
                 setCurrentWordIndex(null);
               }}
             >
-              Back
+              <FaArrowLeft />
             </button>
           </div>
           <div className="my-3">
@@ -1078,7 +1120,7 @@ function CrosswordMenu({
                 if (
                   word.length <=
                     crossword.words[currentWordIndex as number].word.length &&
-                  onlyContainsAlphabetsAndSpaces(word)
+                  onlyContainsUpperCaseAlphabetsAndSpaces(word)
                 ) {
                   setWords([
                     ...words.slice(0, currentWordIndex as number),
