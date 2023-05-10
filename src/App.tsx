@@ -1,8 +1,8 @@
 import { OrbitControls } from "@react-three/drei";
 import { Text, TransformControls } from "@react-three/drei/core";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
-import { memo, useCallback, useRef, useState } from "react";
-import { FaArrowLeft, FaTrash } from "react-icons/fa";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { FaArrowLeft, FaFolderOpen, FaTrash } from "react-icons/fa";
 import { HashRouter, Routes, Route, Link } from "react-router-dom";
 import { z } from "zod";
 
@@ -10,6 +10,8 @@ import { z } from "zod";
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a#using_the_download_attribute_to_save_a_canvas_as_a_png
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file#examples
 // https://stackoverflow.com/a/66590179
+// https://stackoverflow.com/a/74759542
+// https://stackoverflow.com/a/46176359
 
 const BLOCK_COLOR = "rgb(200, 200, 200)";
 const SELECTED_BLOCK_COLOR = "rgb(150, 150, 230)";
@@ -132,6 +134,24 @@ type Crossword = {
   words: Word[];
 };
 
+const EXAMPLE_CROSSWORD: Crossword = {
+  name: "Example",
+  words: [
+    {
+      word: "HELLO",
+      direction: "X",
+      start: [0, 0, 0],
+      description: "Greeting",
+    },
+    {
+      word: "WORLD",
+      direction: "Y",
+      start: [4, 1, 0],
+      description: "Earth",
+    },
+  ],
+};
+
 const crosswordSchema = z.object({
   name: z.string().min(1),
   words: z
@@ -225,7 +245,7 @@ function IntegerInput({ value, onValueChange }: IntegerInputProps) {
 
   return (
     <input
-      className="w-9 border"
+      className="w-9 border border-slate-300"
       type="number"
       value={inputValue}
       onChange={(e) => {
@@ -283,7 +303,7 @@ const WordPositionControls = memo(function ({
   );
 });
 
-interface EditCrosswordMenuProps {
+interface CreateCrosswordMenuProps {
   name: string;
   setName: (name: string) => void;
   words: Word[];
@@ -303,7 +323,7 @@ interface EditCrosswordMenuProps {
   >;
 }
 
-function EditCrosswordMenu({
+function CreateCrosswordMenu({
   name,
   setName,
   words,
@@ -313,7 +333,7 @@ function EditCrosswordMenu({
   currentWordIndex,
   setCurrentWordIndex,
   letters,
-}: EditCrosswordMenuProps) {
+}: CreateCrosswordMenuProps) {
   let [showOpenCrossword, setShowOpenCrossword] = useState(false);
 
   let wordValidity: boolean[] = new Array(words.length).fill(true);
@@ -357,44 +377,43 @@ function EditCrosswordMenu({
   return (
     <div className="border-r p-3 space-y-3 w-60">
       <div className="border-b pb-3">
-        <Link to="/" className="underline">
-          Play crosswords
-        </Link>
-      </div>
-      <div className="border-b pb-3">
         {!showOpenCrossword && (
           <button
             onClick={() => {
               setShowOpenCrossword(true);
             }}
-            className="underline"
           >
-            Edit crossword
+            <span className="flex gap-2 items-center">
+              <FaFolderOpen /> Open crossword to edit
+            </span>
           </button>
         )}
         {showOpenCrossword && (
           <>
-            <button
-              onClick={() => {
-                setShowOpenCrossword(false);
-                setWords([]);
-                setName("");
-                setOrbitCenter([0, 0, 0]);
-                setCurrentWordIndex(null);
-              }}
-              className="underline mb-3"
-            >
-              New crossword
-            </button>
-            <p className="mb-1">Open file to edit: </p>
-            <OpenCrossword
-              onOpen={({ name, words }) => {
-                setWords(words);
-                setName(name);
-                setOrbitCenter([0, 0, 0]);
-                setCurrentWordIndex(null);
-              }}
-            />
+            <div className="border-b pb-3">
+              <p className="mb-1">Open file to edit: </p>
+              <OpenCrossword
+                onOpen={({ name, words }) => {
+                  setWords(words);
+                  setName(name);
+                  setOrbitCenter([0, 0, 0]);
+                  setCurrentWordIndex(null);
+                }}
+              />
+            </div>
+            <div className="pt-3">
+              <button
+                onClick={() => {
+                  setShowOpenCrossword(false);
+                  setWords([]);
+                  setName("");
+                  setOrbitCenter([0, 0, 0]);
+                  setCurrentWordIndex(null);
+                }}
+              >
+                + New crossword
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -404,7 +423,7 @@ function EditCrosswordMenu({
           setName(e.target.value);
         }}
         placeholder="Name"
-        className="border mb-3 p-0.5"
+        className="border border-slate-300 mb-3 p-0.5"
       />
       {currentWordIndex === null && (
         <>
@@ -516,6 +535,7 @@ function EditCrosswordMenu({
                   link.href = URL.createObjectURL(file);
                 }}
                 download={`${name}.json`}
+                className="cursor-pointer underline"
               >
                 Save crossword
               </a>
@@ -531,7 +551,10 @@ function EditCrosswordMenu({
                 setCurrentWordIndex(null);
               }}
             >
-              <FaArrowLeft />
+              <span className="flex gap-1 items-center">
+                <FaArrowLeft />
+                <span>Back to words</span>
+              </span>
             </button>
           </div>
           <div>
@@ -544,6 +567,7 @@ function EditCrosswordMenu({
                     name="direction"
                     id={direction}
                     value={direction}
+                    className="cursor-pointer"
                     onChange={(e) => {
                       if (e.target.checked) {
                         let word = words[currentWordIndex as number];
@@ -568,7 +592,9 @@ function EditCrosswordMenu({
                       direction === words[currentWordIndex as number].direction
                     }
                   />
-                  <label htmlFor={direction}>{direction}</label>
+                  <label htmlFor={direction} className="cursor-pointer">
+                    {direction}
+                  </label>
                 </span>
               ))}
             </div>
@@ -614,7 +640,7 @@ function EditCrosswordMenu({
             <p>Word:</p>
             <input
               value={words[currentWordIndex as number].word}
-              className="border"
+              className="border border-slate-300"
               onChange={(e) => {
                 let word = e.target.value.toUpperCase();
                 if (onlyContainsUpperCaseAlphabetsAndSpaces(word)) {
@@ -652,7 +678,7 @@ function EditCrosswordMenu({
                   ...words.slice((currentWordIndex as number) + 1),
                 ]);
               }}
-              className="border"
+              className="border border-slate-300"
             ></textarea>
           </div>
         </>
@@ -661,7 +687,19 @@ function EditCrosswordMenu({
   );
 }
 
-function EditCrossword() {
+function Navbar() {
+  return (
+    <div className="p-2 flex justify-between bg-black text-white">
+      <Link to="/">3D crossword</Link>
+      <div className="flex gap-5">
+        <Link to="/">Solve</Link>
+        <Link to="/create">Create</Link>
+      </div>
+    </div>
+  );
+}
+
+function CreateCrossword() {
   let [name, setName] = useState("");
   let [words, setWords] = useState([] as Word[]);
   let [currentWordIndex, setCurrentWordIndex] = useState(null as null | number);
@@ -687,6 +725,10 @@ function EditCrossword() {
     },
     [currentWordIndex]
   );
+
+  useEffect(() => {
+    document.title = "Create crossword";
+  }, []);
 
   let letters: Map<
     string,
@@ -794,34 +836,37 @@ function EditCrossword() {
   }
 
   return (
-    <div className="flex justify-between h-screen">
-      <EditCrosswordMenu
-        name={name}
-        setName={setName}
-        words={words}
-        setWords={setWords}
-        orbitCenter={orbitCenter}
-        setOrbitCenter={setOrbitCenter}
-        currentWordIndex={currentWordIndex}
-        setCurrentWordIndex={setCurrentWordIndex}
-        letters={letters}
-      />
-      <div className="grow flex justify-center items-center bg-gray-100">
-        <div className="h-5/6 w-11/12 bg-white">
-          <Canvas>
-            <ambientLight />
-            <pointLight position={[10, 10, 10]} />
-            {blocks}
-            {currentWordIndex !== null &&
-              words[currentWordIndex].word.length > 0 && (
-                <WordPositionControls
-                  orbitCenter={orbitCenter}
-                  setWordCenter={setWordCenter}
-                  setOrbitCenter={setOrbitCenter}
-                />
-              )}
-            <OrbitControls target={orbitCenter} makeDefault />
-          </Canvas>
+    <div className="flex flex-col h-screen">
+      <Navbar />
+      <div className="grow flex justify-between">
+        <CreateCrosswordMenu
+          name={name}
+          setName={setName}
+          words={words}
+          setWords={setWords}
+          orbitCenter={orbitCenter}
+          setOrbitCenter={setOrbitCenter}
+          currentWordIndex={currentWordIndex}
+          setCurrentWordIndex={setCurrentWordIndex}
+          letters={letters}
+        />
+        <div className="grow flex justify-center items-center bg-gray-300">
+          <div className="h-5/6 w-11/12 bg-white">
+            <Canvas>
+              <ambientLight />
+              <pointLight position={[10, 10, 10]} />
+              {blocks}
+              {currentWordIndex !== null &&
+                words[currentWordIndex].word.length > 0 && (
+                  <WordPositionControls
+                    orbitCenter={orbitCenter}
+                    setWordCenter={setWordCenter}
+                    setOrbitCenter={setOrbitCenter}
+                  />
+                )}
+              <OrbitControls target={orbitCenter} makeDefault />
+            </Canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -942,13 +987,28 @@ function ViewCrossword({
     );
   }
 
+  let solved = true;
+  for (let i = 0; i < crossword.words.length; i++) {
+    if (crossword.words[i].word != words[i]) {
+      solved = false;
+      break;
+    }
+  }
+
   return (
-    <Canvas>
-      <ambientLight />
-      <pointLight position={[10, 10, 10]} />
-      {blocks}
-      <OrbitControls target={orbitCenter} />
-    </Canvas>
+    <>
+      <Canvas>
+        <ambientLight />
+        <pointLight position={[10, 10, 10]} />
+        {blocks}
+        <OrbitControls target={orbitCenter} />
+      </Canvas>
+      { solved && (
+        <div className="flex justify-center items-center absolute w-full h-full pointer-events-none text-5xl bg-white/75">
+          <p>Crossword solved!</p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1061,11 +1121,14 @@ function CrosswordMenu({
 
   return (
     <div>
-      <p className="font-bold pb-2 border-b">
-        {solved ? "Crossword solved" : "Not solved"}
+      <p className="pb-2 border-b text-center">
+        {solved ? "Crossword solved!" : "Not solved"}
+      </p>
+      <p className="mt-3 text-ellipsis overflow-hidden">
+        Name: {crossword.name}
       </p>
       {currentWordIndex === null && (
-        <div>
+        <div className="mt-3">
           <p className="my-1">Words:</p>
           {words.map((word, index) => (
             <div className="my-1" key={index}>
@@ -1082,7 +1145,7 @@ function CrosswordMenu({
                   );
                 }}
                 className={
-                  "flex justify-between " +
+                  "flex justify-between cursor-pointer " +
                   (wordValidity[index] ? "" : "text-red-700 ") +
                   (containsOrbitCenter[index] ? "p-1 rounded bg-sky-100" : "")
                 }
@@ -1101,20 +1164,23 @@ function CrosswordMenu({
       )}
       {currentWordIndex !== null && (
         <>
-          <div className="my-1 flex items-center gap-1">
+          <div className="my-3 flex items-center gap-1">
             <button
               onClick={() => {
                 setCurrentWordIndex(null);
               }}
             >
-              <FaArrowLeft />
+              <span className="flex gap-1 items-center">
+                <FaArrowLeft />
+                <span>Back to words</span>
+              </span>
             </button>
           </div>
           <div className="my-3">
             <p>Word:</p>
             <input
               value={words[currentWordIndex]}
-              className="border"
+              className="border border-slate-300 p-0.5"
               onChange={(e) => {
                 let word = e.target.value.toUpperCase();
                 if (
@@ -1141,7 +1207,7 @@ function CrosswordMenu({
   );
 }
 
-function PlayCrossword() {
+function SolveCrossword() {
   let [crossword, setCrossword] = useState(null as null | Crossword);
   let [words, setWords] = useState([] as string[]);
   let [currentWordIndex, setCurrentWordIndex] = useState(null as null | number);
@@ -1151,47 +1217,69 @@ function PlayCrossword() {
     number
   ]);
 
+  useEffect(() => {
+    document.title = "Solve crossword";
+  }, []);
+
   return (
-    <div className="h-screen flex justify-between">
-      <div className="border-r p-3 space-y-3 w-60">
-        <div className="border-b pb-3">
-          <Link to="/edit" className="underline">
-            Edit crosswords
-          </Link>
-        </div>
-        <div className="border-b pb-3">
-          <OpenCrossword
-            onOpen={(crossword) => {
-              setCrossword(crossword);
-              setWords(new Array(crossword.words.length).fill(""));
-              setOrbitCenter([0, 0, 0]);
-              setCurrentWordIndex(null);
-            }}
-          />
-        </div>
-        {crossword && (
-          <CrosswordMenu
-            crossword={crossword}
-            words={words}
-            setWords={setWords}
-            currentWordIndex={currentWordIndex}
-            setCurrentWordIndex={setCurrentWordIndex}
-            orbitCenter={orbitCenter}
-            setOrbitCenter={setOrbitCenter}
-          />
-        )}
-      </div>
-      <div className="grow flex justify-center items-center bg-gray-100">
-        <div className="h-5/6 w-11/12 bg-white">
+    <div className="flex flex-col h-screen">
+      <Navbar />
+      <div className="grow flex justify-between">
+        <div className="border-r p-3 space-y-3 w-60">
+          <div className="border-b pb-3 space-y-1">
+            <p>Open crossword:</p>
+            <OpenCrossword
+              onOpen={(crossword) => {
+                setCrossword(crossword);
+                setWords(new Array(crossword.words.length).fill(""));
+                setOrbitCenter([0, 0, 0]);
+                setCurrentWordIndex(null);
+              }}
+            />
+          </div>
           {crossword && (
-            <ViewCrossword
+            <CrosswordMenu
               crossword={crossword}
               words={words}
+              setWords={setWords}
               currentWordIndex={currentWordIndex}
+              setCurrentWordIndex={setCurrentWordIndex}
               orbitCenter={orbitCenter}
               setOrbitCenter={setOrbitCenter}
             />
           )}
+        </div>
+        <div className="grow flex justify-center items-center bg-gray-300">
+          <div className="h-5/6 w-11/12 bg-white flex justify-center items-center relative">
+            {crossword && (
+              <ViewCrossword
+                crossword={crossword}
+                words={words}
+                currentWordIndex={currentWordIndex}
+                orbitCenter={orbitCenter}
+                setOrbitCenter={setOrbitCenter}
+              />
+            )}
+            {!crossword && (
+              <p className="text-2xl p-5 text-center">
+                Open a crossword to solve from the left menu, or try out this{" "}
+                <span
+                  className="underline cursor-pointer"
+                  onClick={() => {
+                    setCrossword(EXAMPLE_CROSSWORD);
+                    setWords(
+                      new Array(EXAMPLE_CROSSWORD.words.length).fill("")
+                    );
+                    setOrbitCenter([0, 0, 0]);
+                    setCurrentWordIndex(null);
+                  }}
+                >
+                  example
+                </span>
+                .
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1202,8 +1290,8 @@ function App() {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/" element={<PlayCrossword />} />
-        <Route path="/edit" element={<EditCrossword />} />
+        <Route path="/" element={<SolveCrossword />} />
+        <Route path="/create" element={<CreateCrossword />} />
       </Routes>
     </HashRouter>
   );
