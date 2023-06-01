@@ -1,7 +1,7 @@
 import { OrbitControls } from "@react-three/drei";
 import { Text, TransformControls } from "@react-three/drei/core";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useReducer, useRef, useState } from "react";
 import { FaArrowLeft, FaFolderOpen, FaTrash } from "react-icons/fa";
 import { HashRouter, Routes, Route, Link } from "react-router-dom";
 import { z } from "zod";
@@ -262,16 +262,14 @@ function IntegerInput({ value, onValueChange }: IntegerInputProps) {
 
 interface WordPositionControlsProps {
   orbitCenter: [number, number, number];
-  setWordCenter: (position: [number, number, number]) => void;
-  setOrbitCenter: (position: [number, number, number]) => void;
+  dispatch: React.Dispatch<CreateCrosswordAction>;
 }
 
 // When TransformControls is rerendered, the current dragging is stopped.
 // To prevent this we use memo.
 const WordPositionControls = memo(function ({
   orbitCenter,
-  setWordCenter,
-  setOrbitCenter,
+  dispatch,
 }: WordPositionControlsProps) {
   let transformControlsRef = useRef(null);
   return (
@@ -281,11 +279,14 @@ const WordPositionControls = memo(function ({
       ref={transformControlsRef}
       onObjectChange={() => {
         let transformControls = transformControlsRef.current as any;
-        setWordCenter([
-          transformControls.worldPosition.x,
-          transformControls.worldPosition.y,
-          transformControls.worldPosition.z,
-        ]);
+        dispatch({
+          type: "Drag",
+          center: [
+            transformControls.worldPosition.x,
+            transformControls.worldPosition.y,
+            transformControls.worldPosition.z,
+          ],
+        });
       }}
       onMouseUp={() => {
         let transformControls = transformControlsRef.current as any;
@@ -294,8 +295,14 @@ const WordPositionControls = memo(function ({
           transformControls.worldPosition.y,
           transformControls.worldPosition.z,
         ] as [number, number, number];
-        setWordCenter(newPosition);
-        setOrbitCenter(newPosition);
+        dispatch({
+          type: "DragEnd",
+          center: [
+            transformControls.worldPosition.x,
+            transformControls.worldPosition.y,
+            transformControls.worldPosition.z,
+          ],
+        });
       }}
     >
       <mesh></mesh>
@@ -304,14 +311,8 @@ const WordPositionControls = memo(function ({
 });
 
 interface CreateCrosswordMenuProps {
-  name: string;
-  setName: (name: string) => void;
-  words: Word[];
-  setWords: (words: Word[]) => void;
-  orbitCenter: [number, number, number];
-  setOrbitCenter: (orbitCenter: [number, number, number]) => void;
-  currentWordIndex: null | number;
-  setCurrentWordIndex: (currentWordIndex: null | number) => void;
+  createCrosswordState: CreateCrosswordState;
+  dispatch: React.Dispatch<CreateCrosswordAction>;
   letters: Map<
     string,
     {
@@ -324,18 +325,15 @@ interface CreateCrosswordMenuProps {
 }
 
 function CreateCrosswordMenu({
-  name,
-  setName,
-  words,
-  setWords,
-  orbitCenter,
-  setOrbitCenter,
-  currentWordIndex,
-  setCurrentWordIndex,
+  createCrosswordState,
+  dispatch,
   letters,
 }: CreateCrosswordMenuProps) {
   let [showOpenCrossword, setShowOpenCrossword] = useState(false);
-
+  let {
+    crossword: { name, words },
+    currentWordIndex,
+  } = createCrosswordState;
   let wordValidity: boolean[] = new Array(words.length).fill(true);
   for (let i = 0; i < words.length; i++) {
     if (words[i].description.length === 0) {
@@ -393,11 +391,11 @@ function CreateCrosswordMenu({
             <div className="border-b pb-3">
               <p className="mb-1">Open file to edit: </p>
               <OpenCrossword
-                onOpen={({ name, words }) => {
-                  setWords(words);
-                  setName(name);
-                  setOrbitCenter([0, 0, 0]);
-                  setCurrentWordIndex(null);
+                onOpen={(crossword) => {
+                  dispatch({
+                    type: "SetCrossword",
+                    crossword,
+                  });
                 }}
               />
             </div>
@@ -405,10 +403,13 @@ function CreateCrosswordMenu({
               <button
                 onClick={() => {
                   setShowOpenCrossword(false);
-                  setWords([]);
-                  setName("");
-                  setOrbitCenter([0, 0, 0]);
-                  setCurrentWordIndex(null);
+                  dispatch({
+                    type: "SetCrossword",
+                    crossword: {
+                      name: "",
+                      words: [],
+                    },
+                  });
                 }}
               >
                 + New crossword
@@ -420,7 +421,10 @@ function CreateCrosswordMenu({
       <input
         value={name}
         onChange={(e) => {
-          setName(e.target.value);
+          dispatch({
+            type: "SetName",
+            name: e.target.value,
+          });
         }}
         placeholder="Name"
         className="border border-slate-300 mb-3 p-0.5"
@@ -431,16 +435,9 @@ function CreateCrosswordMenu({
             <span>Words:</span>
             <button
               onClick={() => {
-                setWords([
-                  ...words,
-                  {
-                    word: "",
-                    direction: "X",
-                    start: orbitCenter,
-                    description: "",
-                  },
-                ]);
-                setCurrentWordIndex(words.length);
+                dispatch({
+                  type: "NewWord",
+                });
               }}
             >
               + New word
@@ -455,59 +452,20 @@ function CreateCrosswordMenu({
                     (wordValidity[index] ? "" : "text-red-700")
                   }
                   onClick={() => {
-                    setCurrentWordIndex(index);
-                    let { start, direction, word } = words[index];
-                    let blockIndex = Math.floor(word.length / 2);
-                    setOrbitCenter(
-                      wordLetterPosition(start, direction, blockIndex)
-                    );
+                    dispatch({
+                      type: "SelectWord",
+                      index,
+                    });
                   }}
                 >
                   {word.word.length > 0 ? word.word.replaceAll(" ", "_") : "_"}
                 </button>
                 <button
                   onClick={() => {
-                    // Check if the orbit center still has a letter block after deleting the word,
-                    // if not reset the orbit center to [0, 0, 0].
-                    let orbitCenterHasBlock = false;
-                    for (let i = 0; i < words.length; i++) {
-                      if (i === index) {
-                        continue;
-                      }
-
-                      let { start, direction, word } = words[i];
-                      let endBlock = wordLetterPosition(
-                        start,
-                        direction,
-                        word.length - 1
-                      );
-
-                      orbitCenterHasBlock = true;
-                      for (let i = 0; i < 3; i++) {
-                        if (
-                          !(
-                            (start[i] <= orbitCenter[i] &&
-                              orbitCenter[i] <= endBlock[i]) ||
-                            (start[i] >= orbitCenter[i] &&
-                              orbitCenter[i] >= endBlock[i])
-                          )
-                        ) {
-                          orbitCenterHasBlock = false;
-                        }
-                      }
-
-                      if (orbitCenterHasBlock) {
-                        break;
-                      }
-                    }
-
-                    if (!orbitCenterHasBlock) {
-                      setOrbitCenter([0, 0, 0]);
-                    }
-                    setWords([
-                      ...words.slice(0, index),
-                      ...words.slice(index + 1),
-                    ]);
+                    dispatch({
+                      type: "DeleteWord",
+                      index,
+                    });
                   }}
                 >
                   <FaTrash />
@@ -548,7 +506,9 @@ function CreateCrosswordMenu({
           <div className="my-3 flex items-center gap-1">
             <button
               onClick={() => {
-                setCurrentWordIndex(null);
+                dispatch({
+                  type: "ShowWordList",
+                });
               }}
             >
               <span className="flex gap-1 items-center">
@@ -570,22 +530,10 @@ function CreateCrosswordMenu({
                     className="cursor-pointer"
                     onChange={(e) => {
                       if (e.target.checked) {
-                        let word = words[currentWordIndex as number];
-                        setOrbitCenter(
-                          wordLetterPosition(
-                            word.start,
-                            direction as "X" | "Y" | "Z",
-                            Math.floor(word.word.length / 2)
-                          )
-                        );
-                        setWords([
-                          ...words.slice(0, currentWordIndex as number),
-                          {
-                            ...word,
-                            direction: direction as "X" | "Y" | "Z",
-                          },
-                          ...words.slice((currentWordIndex as number) + 1),
-                        ]);
+                        dispatch({
+                          type: "SetDirection",
+                          direction: direction as "X" | "Y" | "Z",
+                        });
                       }
                     }}
                     checked={
@@ -614,22 +562,10 @@ function CreateCrosswordMenu({
                         value,
                         ...currentWord.start.slice(i + 1),
                       ] as [number, number, number];
-                      let { direction, word } = currentWord;
-                      setOrbitCenter(
-                        wordLetterPosition(
-                          newStart,
-                          direction,
-                          Math.floor(word.length / 2)
-                        )
-                      );
-                      setWords([
-                        ...words.slice(0, currentWordIndex as number),
-                        {
-                          ...currentWord,
-                          start: newStart,
-                        },
-                        ...words.slice((currentWordIndex as number) + 1),
-                      ]);
+                      dispatch({
+                        type: "SetStart",
+                        position: newStart,
+                      });
                     }}
                   />
                 </div>
@@ -644,22 +580,10 @@ function CreateCrosswordMenu({
               onChange={(e) => {
                 let word = e.target.value.toUpperCase();
                 if (onlyContainsUpperCaseAlphabetsAndSpaces(word)) {
-                  setWords([
-                    ...words.slice(0, currentWordIndex as number),
-                    {
-                      ...words[currentWordIndex as number],
-                      word,
-                    },
-                    ...words.slice((currentWordIndex as number) + 1),
-                  ]);
-                  let { start, direction } = words[currentWordIndex as number];
-                  setOrbitCenter(
-                    wordLetterPosition(
-                      start,
-                      direction,
-                      Math.floor(word.length / 2)
-                    )
-                  );
+                  dispatch({
+                    type: "SetWord",
+                    word,
+                  });
                 }
               }}
             />
@@ -669,14 +593,10 @@ function CreateCrosswordMenu({
             <textarea
               value={words[currentWordIndex as number].description}
               onChange={(e) => {
-                setWords([
-                  ...words.slice(0, currentWordIndex as number),
-                  {
-                    ...words[currentWordIndex as number],
-                    description: e.target.value,
-                  },
-                  ...words.slice((currentWordIndex as number) + 1),
-                ]);
+                dispatch({
+                  type: "SetDescription",
+                  description: e.target.value,
+                });
               }}
               className="border border-slate-300"
             ></textarea>
@@ -699,35 +619,785 @@ function Navbar() {
   );
 }
 
-function CreateCrossword() {
-  let [name, setName] = useState("");
-  let [words, setWords] = useState([] as Word[]);
-  let [currentWordIndex, setCurrentWordIndex] = useState(null as null | number);
-  let [orbitCenter, setOrbitCenter] = useState([0, 0, 0] as [
-    number,
-    number,
-    number
-  ]);
-  let setWordCenter = useCallback(
-    (position: [number, number, number]) => {
-      setWords((words) => [
+type CreateCrosswordAction =
+  | {
+      type: "SetCrossword";
+      crossword: Crossword;
+    }
+  | {
+      type: "SetName";
+      name: string;
+    }
+  | {
+      type: "NewWord";
+    }
+  | {
+      type: "SelectWord";
+      index: number;
+    }
+  | {
+      type: "DeleteWord";
+      index: number;
+    }
+  | {
+      type: "SetOrbitCenter";
+      position: [number, number, number];
+    }
+  | {
+      type: "ShowWordList";
+    }
+  | {
+      type: "SetStart";
+      position: [number, number, number];
+    }
+  | {
+      type: "SetDirection";
+      direction: "X" | "Y" | "Z";
+    }
+  | {
+      type: "SetWord";
+      word: string;
+    }
+  | {
+      type: "SetDescription";
+      description: string;
+    }
+  | {
+      type: "Drag";
+      center: [number, number, number];
+    }
+  | {
+      type: "DragEnd";
+      center: [number, number, number];
+    }
+  | {
+      type: "Undo";
+    }
+  | {
+      type: "Redo";
+    };
+
+type WordsChange =
+  | {
+      type: "NewWord";
+    }
+  | {
+      type: "DeleteWord";
+      index: number;
+      word: Word;
+    }
+  | {
+      type: "ChangeStart";
+      start: [number, number, number];
+      previousStart: [number, number, number];
+    }
+  | {
+      type: "ChangeDirection";
+      direction: "X" | "Y" | "Z";
+      previousDirection: "X" | "Y" | "Z";
+    }
+  | {
+      type: "ChangeWord";
+      word: string;
+      previousWord: string;
+    }
+  | {
+      type: "ChangeDescription";
+      description: string;
+      previousDescription: string;
+    };
+
+interface History {
+  currentWordIndex: null | number;
+  orbitCenter: [number, number, number];
+  crossword: {
+    name: string;
+    // We store the change from the previous value to the next instead of the entire words.
+    wordsChange: null | WordsChange;
+  };
+}
+
+interface CreateCrosswordState {
+  crossword: Crossword;
+  currentWordIndex: null | number;
+  orbitCenter: [number, number, number];
+  history: History[];
+  historyIndex: number;
+}
+
+function createCrosswordReducer(
+  state: CreateCrosswordState,
+  action: CreateCrosswordAction
+): CreateCrosswordState {
+  let {
+    crossword: { name, words },
+    currentWordIndex,
+    orbitCenter,
+    history,
+    historyIndex,
+  } = state;
+  switch (action.type) {
+    case "SetCrossword": {
+      return {
+        crossword: action.crossword,
+        orbitCenter: [0, 0, 0],
+        currentWordIndex: null,
+        history: [
+          {
+            crossword: {
+              name: action.crossword.name,
+              wordsChange: null,
+            },
+            currentWordIndex: null,
+            orbitCenter: [0, 0, 0],
+          },
+        ],
+        historyIndex: 0,
+      };
+    }
+    case "SetName": {
+      return {
+        ...state,
+        crossword: {
+          name: action.name,
+          words,
+        },
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name: action.name,
+              wordsChange: null,
+            },
+            currentWordIndex,
+            orbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "NewWord": {
+      let newWordIndex = words.length;
+      let newCrossword = {
+        name,
+        words: [
+          ...words,
+          {
+            word: "",
+            direction: "X" as "X" | "Y" | "Z",
+            start: orbitCenter,
+            description: "",
+          },
+        ],
+      };
+      return {
+        ...state,
+        currentWordIndex: newWordIndex,
+        crossword: newCrossword,
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "NewWord",
+              },
+            },
+            currentWordIndex: newWordIndex,
+            orbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "SelectWord": {
+      let { start, direction, word } = words[action.index];
+      let centerBlockIndex = Math.floor(word.length / 2);
+      let centerBlockPosition = wordLetterPosition(
+        start,
+        direction,
+        centerBlockIndex
+      );
+      return {
+        ...state,
+        currentWordIndex: action.index,
+        orbitCenter: centerBlockPosition,
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: null,
+            },
+            currentWordIndex: action.index,
+            orbitCenter: centerBlockPosition,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "DeleteWord": {
+      // Check if the orbit center still has a letter block after deleting the word,
+      // if not reset the orbit center to [0, 0, 0].
+      let orbitCenterHasBlock = false;
+      for (let i = 0; i < words.length; i++) {
+        if (i === action.index) {
+          continue;
+        }
+
+        let { start, direction, word } = words[i];
+        let endBlock = wordLetterPosition(start, direction, word.length - 1);
+
+        orbitCenterHasBlock = true;
+        for (let i = 0; i < 3; i++) {
+          if (
+            !(
+              (start[i] <= orbitCenter[i] && orbitCenter[i] <= endBlock[i]) ||
+              (start[i] >= orbitCenter[i] && orbitCenter[i] >= endBlock[i])
+            )
+          ) {
+            orbitCenterHasBlock = false;
+          }
+        }
+
+        if (orbitCenterHasBlock) {
+          break;
+        }
+      }
+
+      let newOrbitCenter = orbitCenter;
+      if (!orbitCenterHasBlock) {
+        newOrbitCenter = [0, 0, 0];
+      }
+
+      let newCrossword = {
+        name,
+        words: [
+          ...words.slice(0, action.index),
+          ...words.slice(action.index + 1),
+        ],
+      };
+      return {
+        ...state,
+        orbitCenter: newOrbitCenter,
+        crossword: newCrossword,
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "DeleteWord",
+                word: words[action.index],
+                index: action.index,
+              },
+            },
+            currentWordIndex,
+            orbitCenter: newOrbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "SetOrbitCenter": {
+      return {
+        ...state,
+        orbitCenter: action.position,
+      };
+    }
+    case "ShowWordList": {
+      return {
+        ...state,
+        currentWordIndex: null,
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: null,
+            },
+            currentWordIndex: null,
+            orbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "SetStart": {
+      let currentWord = words[currentWordIndex as number];
+      let { direction, word, start } = currentWord;
+      let newOrbitCenter = wordLetterPosition(
+        action.position,
+        direction,
+        Math.floor(word.length / 2)
+      );
+      let newWords = [
         ...words.slice(0, currentWordIndex as number),
         {
-          ...words[currentWordIndex as number],
-          start: wordLetterPosition(
-            position,
-            words[currentWordIndex as number].direction,
-            -Math.floor(words[currentWordIndex as number].word.length / 2)
-          ),
+          ...currentWord,
+          start: action.position,
         },
         ...words.slice((currentWordIndex as number) + 1),
-      ]);
+      ];
+      return {
+        ...state,
+        orbitCenter: newOrbitCenter,
+        crossword: {
+          name,
+          words: newWords,
+        },
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "ChangeStart",
+                start: action.position,
+                previousStart: start,
+              },
+            },
+            currentWordIndex,
+            orbitCenter: newOrbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "SetDirection": {
+      let currentWord = words[currentWordIndex as number];
+      let { direction, word, start } = currentWord;
+      let newOrbitCenter = wordLetterPosition(
+        start,
+        action.direction,
+        Math.floor(word.length / 2)
+      );
+      let newWords = [
+        ...words.slice(0, currentWordIndex as number),
+        {
+          ...currentWord,
+          direction: action.direction,
+        },
+        ...words.slice((currentWordIndex as number) + 1),
+      ];
+      return {
+        ...state,
+        orbitCenter: newOrbitCenter,
+        crossword: {
+          name,
+          words: newWords,
+        },
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "ChangeDirection",
+                direction: action.direction,
+                previousDirection: direction,
+              },
+            },
+            currentWordIndex,
+            orbitCenter: newOrbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "SetWord": {
+      let currentWord = words[currentWordIndex as number];
+      let { start, direction, word } = currentWord;
+      let newOrbitCenter = wordLetterPosition(
+        start,
+        direction,
+        Math.floor(action.word.length / 2)
+      );
+      let newWords = [
+        ...words.slice(0, currentWordIndex as number),
+        {
+          ...currentWord,
+          word: action.word,
+        },
+        ...words.slice((currentWordIndex as number) + 1),
+      ];
+      return {
+        ...state,
+        orbitCenter: newOrbitCenter,
+        crossword: {
+          name,
+          words: newWords,
+        },
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "ChangeWord",
+                word: action.word,
+                previousWord: word,
+              },
+            },
+            currentWordIndex,
+            orbitCenter: newOrbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "SetDescription": {
+      let currentWord = words[currentWordIndex as number];
+      let newWords = [
+        ...words.slice(0, currentWordIndex as number),
+        {
+          ...currentWord,
+          description: action.description,
+        },
+        ...words.slice((currentWordIndex as number) + 1),
+      ];
+      return {
+        ...state,
+        crossword: {
+          name,
+          words: newWords,
+        },
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "ChangeDescription",
+                description: action.description,
+                previousDescription: currentWord.description,
+              },
+            },
+            currentWordIndex,
+            orbitCenter,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "Drag": {
+      let currentWord = words[currentWordIndex as number];
+      let { direction, word } = currentWord;
+      let newStart = wordLetterPosition(
+        action.center,
+        direction,
+        -Math.floor(word.length / 2)
+      );
+      let newCrossword = {
+        ...state.crossword,
+        words: [
+          ...words.slice(0, currentWordIndex as number),
+          {
+            ...currentWord,
+            start: newStart,
+          },
+          ...words.slice((currentWordIndex as number) + 1),
+        ],
+      };
+      return {
+        ...state,
+        crossword: newCrossword,
+      };
+    }
+    case "DragEnd": {
+      let currentWord = words[currentWordIndex as number];
+      let { direction, word } = currentWord;
+      let previousStart = wordLetterPosition(
+        orbitCenter,
+        direction,
+        -Math.floor(word.length / 2)
+      );
+      let newStart = wordLetterPosition(
+        action.center,
+        direction,
+        -Math.floor(word.length / 2)
+      );
+      let newCrossword = {
+        ...state.crossword,
+        words: [
+          ...words.slice(0, currentWordIndex as number),
+          {
+            ...currentWord,
+            start: newStart,
+          },
+          ...words.slice((currentWordIndex as number) + 1),
+        ],
+      };
+      return {
+        ...state,
+        orbitCenter: action.center,
+        crossword: newCrossword,
+        history: [
+          ...history.slice(0, historyIndex + 1),
+          {
+            crossword: {
+              name,
+              wordsChange: {
+                type: "ChangeStart",
+                start: newStart,
+                previousStart,
+              },
+            },
+            currentWordIndex,
+            orbitCenter: action.center,
+          },
+        ],
+        historyIndex: historyIndex + 1,
+      };
+    }
+    case "Undo": {
+      if (historyIndex === 0) {
+        return state;
+      }
+
+      let {
+        currentWordIndex,
+        orbitCenter,
+        crossword: { name },
+      } = history[historyIndex - 1];
+      let wordsChange = history[historyIndex].crossword.wordsChange;
+      let newWords = words;
+      if (wordsChange) {
+        switch (wordsChange.type) {
+          case "NewWord": {
+            newWords = newWords.slice(0, newWords.length - 1);
+            break;
+          }
+          case "DeleteWord": {
+            newWords = [
+              ...newWords.slice(0, wordsChange.index),
+              wordsChange.word,
+              ...newWords.slice(wordsChange.index),
+            ];
+            break;
+          }
+          case "ChangeStart": {
+            newWords = [
+              ...newWords.slice(
+                0,
+                history[historyIndex].currentWordIndex as number
+              ),
+              {
+                ...newWords[history[historyIndex].currentWordIndex as number],
+                start: wordsChange.previousStart,
+              },
+              ...newWords.slice(
+                (history[historyIndex].currentWordIndex as number) + 1
+              ),
+            ];
+            break;
+          }
+          case "ChangeDirection": {
+            newWords = [
+              ...newWords.slice(
+                0,
+                history[historyIndex].currentWordIndex as number
+              ),
+              {
+                ...newWords[history[historyIndex].currentWordIndex as number],
+                direction: wordsChange.previousDirection,
+              },
+              ...newWords.slice(
+                (history[historyIndex].currentWordIndex as number) + 1
+              ),
+            ];
+            break;
+          }
+          case "ChangeWord": {
+            newWords = [
+              ...newWords.slice(
+                0,
+                history[historyIndex].currentWordIndex as number
+              ),
+              {
+                ...newWords[history[historyIndex].currentWordIndex as number],
+                word: wordsChange.previousWord,
+              },
+              ...newWords.slice(
+                (history[historyIndex].currentWordIndex as number) + 1
+              ),
+            ];
+            break;
+          }
+          case "ChangeDescription": {
+            newWords = [
+              ...newWords.slice(
+                0,
+                history[historyIndex].currentWordIndex as number
+              ),
+              {
+                ...newWords[history[historyIndex].currentWordIndex as number],
+                description: wordsChange.previousDescription,
+              },
+              ...newWords.slice(
+                (history[historyIndex].currentWordIndex as number) + 1
+              ),
+            ];
+            break;
+          }
+        }
+      }
+
+      return {
+        history,
+        historyIndex: historyIndex - 1,
+        currentWordIndex,
+        orbitCenter,
+        crossword: {
+          name,
+          words: newWords,
+        },
+      };
+    }
+    case "Redo": {
+      if (historyIndex === history.length - 1) {
+        return state;
+      }
+
+      let {
+        currentWordIndex,
+        orbitCenter,
+        crossword: { name, wordsChange },
+      } = history[historyIndex + 1];
+      let newWords = words;
+      if (wordsChange) {
+        switch (wordsChange.type) {
+          case "NewWord": {
+            newWords = [
+              ...newWords,
+              {
+                word: "",
+                description: "",
+                direction: "X",
+                start: orbitCenter,
+              },
+            ];
+            break;
+          }
+          case "DeleteWord": {
+            newWords = [
+              ...newWords.slice(0, wordsChange.index),
+              ...newWords.slice(wordsChange.index + 1),
+            ];
+            break;
+          }
+          case "ChangeStart": {
+            newWords = [
+              ...newWords.slice(0, currentWordIndex as number),
+              {
+                ...newWords[currentWordIndex as number],
+                start: wordsChange.start,
+              },
+              ...newWords.slice((currentWordIndex as number) + 1),
+            ];
+            break;
+          }
+          case "ChangeDirection": {
+            newWords = [
+              ...newWords.slice(0, currentWordIndex as number),
+              {
+                ...newWords[currentWordIndex as number],
+                direction: wordsChange.direction,
+              },
+              ...newWords.slice((currentWordIndex as number) + 1),
+            ];
+            break;
+          }
+          case "ChangeWord": {
+            newWords = [
+              ...newWords.slice(0, currentWordIndex as number),
+              {
+                ...newWords[currentWordIndex as number],
+                word: wordsChange.word,
+              },
+              ...newWords.slice((currentWordIndex as number) + 1),
+            ];
+            break;
+          }
+          case "ChangeDescription": {
+            newWords = [
+              ...newWords.slice(0, currentWordIndex as number),
+              {
+                ...newWords[currentWordIndex as number],
+                description: wordsChange.description,
+              },
+              ...newWords.slice((currentWordIndex as number) + 1),
+            ];
+            break;
+          }
+        }
+      }
+
+      return {
+        history,
+        historyIndex: historyIndex + 1,
+        currentWordIndex,
+        orbitCenter,
+        crossword: {
+          name,
+          words: newWords,
+        },
+      };
+    }
+  }
+}
+
+function CreateCrossword() {
+  let [state, dispatch] = useReducer(createCrosswordReducer, {
+    crossword: {
+      name: "",
+      words: [],
     },
-    [currentWordIndex]
-  );
+    currentWordIndex: null,
+    orbitCenter: [0, 0, 0],
+    history: [
+      {
+        crossword: {
+          name: "",
+          wordsChange: null,
+        },
+        currentWordIndex: null,
+        orbitCenter: [0, 0, 0],
+      },
+    ],
+    historyIndex: 0,
+  });
+  let {
+    crossword: { words },
+    currentWordIndex,
+    orbitCenter,
+  } = state;
 
   useEffect(() => {
     document.title = "Create crossword";
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey) {
+        if (e.code === "KeyZ") {
+          // https://stackoverflow.com/a/39802212
+          e.preventDefault();
+          dispatch({
+            type: "Undo",
+          });
+        } else if (e.code === "KeyY") {
+          e.preventDefault();
+          dispatch({
+            type: "Redo",
+          });
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   let letters: Map<
@@ -814,7 +1484,10 @@ function CreateCrossword() {
     let onClick = (e: ThreeEvent<MouseEvent>) => {
       if (currentWordIndex === null) {
         e.stopPropagation();
-        setOrbitCenter(position);
+        dispatch({
+          type: "SetOrbitCenter",
+          position,
+        });
       }
     };
 
@@ -840,14 +1513,8 @@ function CreateCrossword() {
       <Navbar />
       <div className="grow flex justify-between">
         <CreateCrosswordMenu
-          name={name}
-          setName={setName}
-          words={words}
-          setWords={setWords}
-          orbitCenter={orbitCenter}
-          setOrbitCenter={setOrbitCenter}
-          currentWordIndex={currentWordIndex}
-          setCurrentWordIndex={setCurrentWordIndex}
+          createCrosswordState={state}
+          dispatch={dispatch}
           letters={letters}
         />
         <div className="grow flex justify-center items-center bg-gray-300">
@@ -860,8 +1527,7 @@ function CreateCrossword() {
                 words[currentWordIndex].word.length > 0 && (
                   <WordPositionControls
                     orbitCenter={orbitCenter}
-                    setWordCenter={setWordCenter}
-                    setOrbitCenter={setOrbitCenter}
+                    dispatch={dispatch}
                   />
                 )}
               <OrbitControls target={orbitCenter} makeDefault />
@@ -1003,7 +1669,7 @@ function ViewCrossword({
         {blocks}
         <OrbitControls target={orbitCenter} />
       </Canvas>
-      { solved && (
+      {solved && (
         <div className="flex justify-center items-center absolute w-full h-full pointer-events-none text-5xl bg-white/75">
           <p>Crossword solved!</p>
         </div>
