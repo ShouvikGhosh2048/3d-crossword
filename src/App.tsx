@@ -18,7 +18,7 @@ import { z } from "zod";
 // https://stackoverflow.com/a/74759542
 // https://stackoverflow.com/a/46176359
 
-const BLOCK_COLOR = "rgb(200, 200, 200)";
+const BLOCK_COLOR = "rgb(255, 255, 255)";
 const SELECTED_BLOCK_COLOR = "rgb(150, 150, 230)";
 
 function onlyContainsUpperCaseAlphabetsAndSpaces(s: string) {
@@ -1531,7 +1531,7 @@ function CreateCrossword({ tutorial }: CreateCrosswordProps) {
         dispatch={dispatch}
         letters={letters}
       />
-      <div className="grow flex justify-center items-center bg-gray-300">
+      <div className="grow flex justify-center items-center bg-gray-200">
         <div className="h-5/6 w-11/12 bg-white">
           <Canvas>
             <ambientLight />
@@ -1826,7 +1826,7 @@ function CrosswordMenu({
                 className={
                   "flex justify-between cursor-pointer " +
                   (wordValidity[index] ? "" : "text-red-700 ") +
-                  (containsOrbitCenter[index] ? "p-1 rounded bg-sky-100" : "")
+                  (containsOrbitCenter[index] ? "p-1 rounded bg-sky-50" : "")
                 }
               >
                 <span className="text-ellipsis overflow-hidden">
@@ -1938,7 +1938,7 @@ function SolveCrossword({ tutorial }: SolveCrosswordProps) {
           />
         )}
       </div>
-      <div className="grow flex justify-center items-center bg-gray-300">
+      <div className="grow flex justify-center items-center bg-gray-200">
         <div className="h-5/6 w-11/12 bg-white flex justify-center items-center relative">
           {crossword && (
             <ViewCrossword
