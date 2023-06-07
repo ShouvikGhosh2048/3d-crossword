@@ -2,7 +2,12 @@ import { OrbitControls } from "@react-three/drei";
 import { Text, TransformControls } from "@react-three/drei/core";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
 import { memo, useEffect, useReducer, useRef, useState } from "react";
-import { FaArrowLeft, FaFolderOpen, FaTrash } from "react-icons/fa";
+import {
+  FaArrowLeft,
+  FaArrowRight,
+  FaFolderOpen,
+  FaTrash,
+} from "react-icons/fa";
 import { HashRouter, Routes, Route, Link } from "react-router-dom";
 import { z } from "zod";
 
@@ -614,6 +619,7 @@ function Navbar() {
       <div className="flex gap-5">
         <Link to="/">Solve</Link>
         <Link to="/create">Create</Link>
+        <Link to="/tutorial">Tutorial</Link>
       </div>
     </div>
   );
@@ -1347,22 +1353,32 @@ function createCrosswordReducer(
   }
 }
 
-function CreateCrossword() {
+interface CreateCrosswordProps {
+  tutorial?: {
+    crossword: Crossword;
+    currentWordIndex: null | number;
+    orbitCenter: [number, number, number];
+  };
+}
+
+function CreateCrossword({ tutorial }: CreateCrosswordProps) {
   let [state, dispatch] = useReducer(createCrosswordReducer, {
-    crossword: {
-      name: "",
-      words: [],
-    },
-    currentWordIndex: null,
-    orbitCenter: [0, 0, 0],
+    crossword: tutorial
+      ? tutorial.crossword
+      : {
+          name: "",
+          words: [],
+        },
+    currentWordIndex: tutorial ? tutorial.currentWordIndex : null,
+    orbitCenter: tutorial ? tutorial.orbitCenter : [0, 0, 0],
     history: [
       {
         crossword: {
-          name: "",
+          name: tutorial ? tutorial.crossword.name : "",
           wordsChange: null,
         },
-        currentWordIndex: null,
-        orbitCenter: [0, 0, 0],
+        currentWordIndex: tutorial ? tutorial.currentWordIndex : null,
+        orbitCenter: tutorial ? tutorial.orbitCenter : [0, 0, 0],
       },
     ],
     historyIndex: 0,
@@ -1509,30 +1525,27 @@ function CreateCrossword() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <Navbar />
-      <div className="grow flex justify-between">
-        <CreateCrosswordMenu
-          createCrosswordState={state}
-          dispatch={dispatch}
-          letters={letters}
-        />
-        <div className="grow flex justify-center items-center bg-gray-300">
-          <div className="h-5/6 w-11/12 bg-white">
-            <Canvas>
-              <ambientLight />
-              <pointLight position={[10, 10, 10]} />
-              {blocks}
-              {currentWordIndex !== null &&
-                words[currentWordIndex].word.length > 0 && (
-                  <WordPositionControls
-                    orbitCenter={orbitCenter}
-                    dispatch={dispatch}
-                  />
-                )}
-              <OrbitControls target={orbitCenter} makeDefault />
-            </Canvas>
-          </div>
+    <div className="grow flex justify-between">
+      <CreateCrosswordMenu
+        createCrosswordState={state}
+        dispatch={dispatch}
+        letters={letters}
+      />
+      <div className="grow flex justify-center items-center bg-gray-300">
+        <div className="h-5/6 w-11/12 bg-white">
+          <Canvas>
+            <ambientLight />
+            <pointLight position={[10, 10, 10]} />
+            {blocks}
+            {currentWordIndex !== null &&
+              words[currentWordIndex].word.length > 0 && (
+                <WordPositionControls
+                  orbitCenter={orbitCenter}
+                  dispatch={dispatch}
+                />
+              )}
+            <OrbitControls target={orbitCenter} makeDefault />
+          </Canvas>
         </div>
       </div>
     </div>
@@ -1873,9 +1886,21 @@ function CrosswordMenu({
   );
 }
 
-function SolveCrossword() {
-  let [crossword, setCrossword] = useState(null as null | Crossword);
-  let [words, setWords] = useState([] as string[]);
+interface SolveCrosswordProps {
+  tutorial?: {
+    crossword: null | Crossword;
+  };
+}
+
+function SolveCrossword({ tutorial }: SolveCrosswordProps) {
+  let [crossword, setCrossword] = useState(
+    tutorial ? tutorial.crossword : null
+  );
+  let [words, setWords] = useState(
+    (tutorial && tutorial.crossword
+      ? new Array(tutorial.crossword.words.length).fill("")
+      : []) as string[]
+  );
   let [currentWordIndex, setCurrentWordIndex] = useState(null as null | number);
   let [orbitCenter, setOrbitCenter] = useState([0, 0, 0] as [
     number,
@@ -1888,66 +1913,395 @@ function SolveCrossword() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen">
-      <Navbar />
-      <div className="grow flex justify-between">
-        <div className="border-r p-3 space-y-3 w-60">
-          <div className="border-b pb-3 space-y-1">
-            <p>Open crossword:</p>
-            <OpenCrossword
-              onOpen={(crossword) => {
-                setCrossword(crossword);
-                setWords(new Array(crossword.words.length).fill(""));
-                setOrbitCenter([0, 0, 0]);
-                setCurrentWordIndex(null);
-              }}
-            />
-          </div>
+    <div className="grow flex justify-between">
+      <div className="border-r p-3 space-y-3 w-60">
+        <div className="border-b pb-3 space-y-1">
+          <p>Open crossword:</p>
+          <OpenCrossword
+            onOpen={(crossword) => {
+              setCrossword(crossword);
+              setWords(new Array(crossword.words.length).fill(""));
+              setOrbitCenter([0, 0, 0]);
+              setCurrentWordIndex(null);
+            }}
+          />
+        </div>
+        {crossword && (
+          <CrosswordMenu
+            crossword={crossword}
+            words={words}
+            setWords={setWords}
+            currentWordIndex={currentWordIndex}
+            setCurrentWordIndex={setCurrentWordIndex}
+            orbitCenter={orbitCenter}
+            setOrbitCenter={setOrbitCenter}
+          />
+        )}
+      </div>
+      <div className="grow flex justify-center items-center bg-gray-300">
+        <div className="h-5/6 w-11/12 bg-white flex justify-center items-center relative">
           {crossword && (
-            <CrosswordMenu
+            <ViewCrossword
               crossword={crossword}
               words={words}
-              setWords={setWords}
               currentWordIndex={currentWordIndex}
-              setCurrentWordIndex={setCurrentWordIndex}
               orbitCenter={orbitCenter}
               setOrbitCenter={setOrbitCenter}
             />
           )}
+          {!crossword && (
+            <p className="text-2xl p-5 text-center">
+              Open a crossword to solve from the left menu, or try out this{" "}
+              <span
+                className="underline cursor-pointer"
+                onClick={() => {
+                  setCrossword(EXAMPLE_CROSSWORD);
+                  setWords(new Array(EXAMPLE_CROSSWORD.words.length).fill(""));
+                  setOrbitCenter([0, 0, 0]);
+                  setCurrentWordIndex(null);
+                }}
+              >
+                example
+              </span>
+              .
+            </p>
+          )}
         </div>
-        <div className="grow flex justify-center items-center bg-gray-300">
-          <div className="h-5/6 w-11/12 bg-white flex justify-center items-center relative">
-            {crossword && (
-              <ViewCrossword
-                crossword={crossword}
-                words={words}
-                currentWordIndex={currentWordIndex}
-                orbitCenter={orbitCenter}
-                setOrbitCenter={setOrbitCenter}
-              />
-            )}
-            {!crossword && (
-              <p className="text-2xl p-5 text-center">
-                Open a crossword to solve from the left menu, or try out this{" "}
-                <span
-                  className="underline cursor-pointer"
-                  onClick={() => {
-                    setCrossword(EXAMPLE_CROSSWORD);
-                    setWords(
-                      new Array(EXAMPLE_CROSSWORD.words.length).fill("")
-                    );
-                    setOrbitCenter([0, 0, 0]);
-                    setCurrentWordIndex(null);
-                  }}
-                >
-                  example
+      </div>
+    </div>
+  );
+}
+
+type Slide =
+  | {
+      type: "Create";
+      text: JSX.Element;
+      crossword: Crossword;
+      currentWordIndex: null | number;
+      orbitCenter: [number, number, number];
+    }
+  | {
+      type: "Solve";
+      text: JSX.Element;
+      crossword: null | Crossword;
+    }
+  | {
+      type: "Empty";
+      text: JSX.Element;
+    };
+
+const TUTORIAL_SLIDES: Slide[] = [
+  {
+    type: "Empty",
+    text: (
+      <div className="space-y-3">
+        <p>Welcome to this tutorial!</p>
+        <p>
+          This tutorial is interactive - you will be able to interact with the
+          page on the right.
+        </p>
+      </div>
+    ),
+  },
+  {
+    type: "Create",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Create</p>
+        <p>
+          The create page consists of the left menu and the central crossword
+          viewer.
+        </p>
+        <p>You can give the crossword a name in the name textbox.</p>
+        <p>You can create a new word using the new word button.</p>
+      </div>
+    ),
+    crossword: {
+      name: "",
+      words: [],
+    },
+    currentWordIndex: null,
+    orbitCenter: [0, 0, 0],
+  },
+  {
+    type: "Create",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Edit word view</p>
+        <p>
+          When we create a new word, the word gets selected and the menu shows
+          its properties.
+        </p>
+        <p>
+          <span className="font-bold">Direction:</span> The direction of the
+          word.
+        </p>
+        <p>
+          <span className="font-bold">Start:</span> The position of the first
+          letter of the word.
+        </p>
+        <p>
+          <span className="font-bold">Word:</span> The word. It will consist of
+          uppercase English letters. Spaces are allowed in the editor but not in
+          the final crossword.
+        </p>
+        <p>
+          <span className="font-bold">Description:</span> The description of the
+          word.
+        </p>
+        <p>
+          You can change these properties in the menu. The position of the word
+          can also be changed by dragging the arrows in the crossword viewer.
+        </p>
+        <p>
+          You can orbit the view with by dragging the left mouse button and zoom
+          using the scroll wheel.
+        </p>
+        <p>Undo and redo is supported with CtrlZ/CtrlY.</p>
+      </div>
+    ),
+    crossword: {
+      name: "Demo",
+      words: [
+        {
+          direction: "X",
+          start: [0, 0, 0],
+          word: "HELLO",
+          description: "Greeting",
+        },
+      ],
+    },
+    currentWordIndex: 0,
+    orbitCenter: [2, 0, 0],
+  },
+  {
+    type: "Create",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Word list view</p>
+        <p>
+          In the word list view, you can click a letter in the crossword viewer
+          to select it and set it as the orbit center.
+        </p>
+        <p>
+          You can create a new word using the new word button. When a new word
+          is created, it's start is set to the currently selected letter, or [0,
+          0, 0] if no letter is selected.
+        </p>
+        <p>
+          You can click a word in the word list to select it - this will allow
+          you to edit the word.
+        </p>
+      </div>
+    ),
+    crossword: {
+      name: "Demo",
+      words: [
+        {
+          direction: "X",
+          start: [0, 0, 0],
+          word: "HELLO",
+          description: "Greeting",
+        },
+      ],
+    },
+    currentWordIndex: null,
+    orbitCenter: [2, 0, 0],
+  },
+  {
+    type: "Create",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Letter clash</p>
+        <p>Here we have two words - HELLO and WORLD.</p>
+        <p>
+          The question mark appears because the O from HELLO and the W from
+          WORLD currently occupy the same space. If you move WORLD one unit up,
+          the O's coincide and the question mark disappears.
+        </p>
+      </div>
+    ),
+    crossword: {
+      name: "Demo",
+      words: [
+        {
+          direction: "X",
+          start: [0, 0, 0],
+          word: "HELLO",
+          description: "Greeting",
+        },
+        {
+          direction: "Y",
+          start: [4, 0, 0],
+          word: "WORLD",
+          description: "Universe",
+        },
+      ],
+    },
+    currentWordIndex: null,
+    orbitCenter: [4, 0, 0],
+  },
+  {
+    type: "Create",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Saving crosswords</p>
+        <p>Once you have a valid crossword:</p>
+        <ul className="list-disc pl-5">
+          <li>a nonempty name</li>
+          <li>atleast one word</li>
+          <li>
+            all words are nonempty, have no spaces and have nonempty
+            descriptions
+          </li>
+          <li>distinct letters don't occupy the same space</li>
+        </ul>
+        <p>you can save the crossword.</p>
+        <p>The crossword file can be opened to edit or solve.</p>
+      </div>
+    ),
+    crossword: {
+      name: "Demo",
+      words: [
+        {
+          direction: "X",
+          start: [0, 0, 0],
+          word: "HELLO",
+          description: "Greeting",
+        },
+        {
+          direction: "Y",
+          start: [4, 1, 0],
+          word: "WORLD",
+          description: "Universe",
+        },
+      ],
+    },
+    currentWordIndex: null,
+    orbitCenter: [4, -1, 0],
+  },
+  {
+    type: "Solve",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Solve</p>
+        <p>This is the page where you solve a crossword.</p>
+        <p>It consists of the left menu and the central crossword viewer.</p>
+      </div>
+    ),
+    crossword: null,
+  },
+  {
+    type: "Solve",
+    text: (
+      <div className="space-y-3">
+        <p className="font-bold text-xl">Solving a crossword</p>
+        <p>Once a crossword is chosen, you can see the list of words.</p>
+        <p>
+          You can click on the crossword letter blocks in the crossword viewer
+          to select them. The words to which the letter block belongs to are
+          highlighted in the menu.
+        </p>
+        <p>
+          You can click a word in the menu to select it. When selected, you can
+          see the description of the word and fill in your guess.
+        </p>
+        <p>
+          When all the words are correctly guessed, you'll see a victory
+          message.
+        </p>
+      </div>
+    ),
+    crossword: {
+      name: "Demo",
+      words: [
+        {
+          direction: "X",
+          start: [0, 0, 0],
+          word: "HELLO",
+          description: "Greeting",
+        },
+        {
+          direction: "Y",
+          start: [4, 1, 0],
+          word: "WORLD",
+          description: "Universe",
+        },
+      ],
+    },
+  },
+];
+
+function Tutorial() {
+  let [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  let currentSlide = TUTORIAL_SLIDES[currentSlideIndex];
+
+  let slideCrossword;
+  switch (currentSlide.type) {
+    case "Create": {
+      slideCrossword = (
+        <CreateCrossword
+          tutorial={{
+            crossword: currentSlide.crossword,
+            currentWordIndex: currentSlide.currentWordIndex,
+            orbitCenter: currentSlide.orbitCenter,
+          }}
+          key={currentSlideIndex}
+        />
+      );
+      break;
+    }
+    case "Solve": {
+      slideCrossword = (
+        <SolveCrossword
+          tutorial={{ crossword: currentSlide.crossword }}
+          key={currentSlideIndex}
+        />
+      );
+      break;
+    }
+    case "Empty": {
+      slideCrossword = <div></div>;
+      break;
+    }
+  }
+
+  return (
+    <div className="grow flex overflow-hidden">
+      <div className="w-60 border-r-2 border-slate-300 p-3 overflow-auto space-y-3 bg-slate-100">
+        {currentSlide.text}
+        <div className="flex justify-between w-full">
+          <div>
+            {currentSlideIndex > 0 && (
+              <button
+                onClick={() => {
+                  setCurrentSlideIndex(currentSlideIndex - 1);
+                }}
+              >
+                <span className="flex gap-1 items-center">
+                  <FaArrowLeft />
+                  <span>Previous</span>
                 </span>
-                .
-              </p>
+              </button>
+            )}
+          </div>
+          <div>
+            {currentSlideIndex < TUTORIAL_SLIDES.length - 1 && (
+              <button
+                onClick={() => {
+                  setCurrentSlideIndex(currentSlideIndex + 1);
+                }}
+              >
+                <span className="flex gap-1 items-center">
+                  <FaArrowRight />
+                  <span>Next</span>
+                </span>
+              </button>
             )}
           </div>
         </div>
       </div>
+      {slideCrossword}
     </div>
   );
 }
@@ -1955,10 +2309,14 @@ function SolveCrossword() {
 function App() {
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/" element={<SolveCrossword />} />
-        <Route path="/create" element={<CreateCrossword />} />
-      </Routes>
+      <div className="flex flex-col h-screen">
+        <Navbar />
+        <Routes>
+          <Route path="/" element={<SolveCrossword />} />
+          <Route path="/create" element={<CreateCrossword />} />
+          <Route path="/tutorial" element={<Tutorial />} />
+        </Routes>
+      </div>
     </HashRouter>
   );
 }
